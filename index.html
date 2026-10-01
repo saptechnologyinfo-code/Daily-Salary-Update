@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Daily Salary Update</title>
+<style>
+  :root{
+    --bg:#f1f5f9; --card:#ffffff; --text:#0f172a; --muted:#64748b; --border:#e2e8f0; --input:#f8fafc;
+    --primary:#2563eb; --success:#059669; --warn:#d97706; --danger:#dc2626; --grey:#64748b;
+    --warn-bg:#fffbeb; --ok-bg:#ecfdf5; --blue-bg:#eff6ff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0b1329; --card:#1c2541; --text:#f8fafc; --muted:#94a3b8; --border:#334155; --input:#0b1329;
+      --primary:#3a86ff; --success:#06d6a0; --warn:#ff9f1c; --danger:#ef476f;
+      --warn-bg:#3a2a0a; --ok-bg:#0b3a2e; --blue-bg:#12305c; }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;}
+  body{padding:12px 12px 90px;}
+  .wrap{max-width:1100px;margin:0 auto;}
+  h1{font-size:1.25rem;margin:0;}
+  label{display:block;font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
+  input,select,textarea{width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--input);color:var(--text);font-size:.95rem;font-family:inherit;}
+  button{font-family:inherit;cursor:pointer;}
+  .btn{background:var(--primary);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:700;font-size:.9rem;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border);}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;}
+  .hidden{display:none !important;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
+  .topbar .who{font-size:.8rem;color:var(--muted);display:flex;gap:10px;align-items:center;}
+
+  #loginBox{max-width:380px;margin:60px auto;}
+  #loginBox .card > div{margin-bottom:12px;}
+  .err{color:var(--danger);font-size:.85rem;font-weight:600;margin-top:8px;min-height:1em;}
+
+  .daterow{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;}
+  .daterow .dt{flex:1;min-width:150px;max-width:220px;}
+  .daterow .defs{display:flex;gap:8px;flex:2;min-width:240px;}
+  .daterow .defs > div{flex:1;}
+
+  .banner{border-radius:10px;padding:10px 14px;font-size:.88rem;font-weight:600;margin-bottom:12px;}
+  .banner.warn{background:var(--warn-bg);border:1px solid var(--warn);color:var(--warn);}
+  .banner.info{background:var(--blue-bg);border:1px solid var(--primary);color:var(--primary);}
+
+  .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;}
+  @media(max-width:640px){ .summary{grid-template-columns:1fr 1fr;} }
+  .tile{background:var(--card);border:1px solid var(--border);border-top:4px solid var(--c);border-radius:12px;padding:10px 12px;}
+  .tile .n{font-size:1.6rem;font-weight:800;color:var(--c);line-height:1.1;}
+  .tile .l{font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);}
+  .tile .names{font-size:.78rem;color:var(--text);margin-top:6px;line-height:1.45;word-break:break-word;}
+  .tile .names i{color:var(--muted);font-style:normal;}
+  .daytotals{font-size:.85rem;color:var(--muted);margin-bottom:12px;}
+  .daytotals b{color:var(--text);}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px;}
+  .tc{background:var(--card);border:1px solid var(--border);border-left:5px solid var(--grey);border-radius:12px;padding:12px;}
+  .tc.saved{border-left-color:var(--warn);background:linear-gradient(var(--warn-bg),var(--warn-bg)) , var(--card);background-blend-mode:normal;}
+  .tc.saved{background:var(--card);}
+  .tc.dirty{border-left-color:var(--primary);}
+  .tc-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;}
+  .tc-head b{font-size:1rem;}
+  .pill{font-size:.68rem;font-weight:800;padding:3px 9px;border-radius:20px;color:#fff;white-space:nowrap;}
+  .pill.none{background:var(--grey);} .pill.done{background:var(--warn);} .pill.edit{background:var(--primary);}
+  .tc-note-old{font-size:.76rem;color:var(--warn);font-weight:600;margin-bottom:8px;}
+  .att{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;}
+  .att button{padding:8px 2px;border:1px solid var(--border);background:var(--input);color:var(--text);border-radius:8px;font-size:.78rem;font-weight:700;}
+  .att button.on[data-a="present"]{background:var(--success);border-color:var(--success);color:#fff;}
+  .att button.on[data-a="half_day"]{background:var(--warn);border-color:var(--warn);color:#fff;}
+  .att button.on[data-a="absent"]{background:var(--danger);border-color:var(--danger);color:#fff;}
+  .att button.on[data-a="leave"]{background:var(--grey);border-color:var(--grey);color:#fff;}
+  .amts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+  .tc .save-one{width:100%;margin-top:8px;}
+
+  .savebar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--border);padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center;gap:12px;align-items:center;z-index:5;}
+  .savebar span{font-size:.85rem;color:var(--muted);}
+  .empty{padding:30px;text-align:center;color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ============ LOGIN (admin only) ============ -->
+  <div id="loginBox">
+    <h1 style="text-align:center;margin-bottom:14px;">Daily Salary Update</h1>
+    <div class="card">
+      <div><label>Admin username</label><input id="lu" autocomplete="username" /></div>
+      <div><label>Password</label><input id="lp" type="password" autocomplete="current-password" /></div>
+      <button class="btn" id="loginBtn" style="width:100%;">Sign in</button>
+      <div class="err" id="loginErr"></div>
+    </div>
+  </div>
+
+  <!-- ============ MAIN ============ -->
+  <div id="main" class="hidden">
+    <div class="topbar">
+      <h1>Daily Salary Update</h1>
+      <div class="who"><span id="whoName"></span><button class="btn btn-ghost" id="logoutBtn" style="padding:6px 12px;">Sign out</button></div>
+    </div>
+
+    <div class="daterow">
+      <button class="btn btn-ghost" id="prevDay" title="Previous day">&larr;</button>
+      <div class="dt"><label>Date</label><input type="date" id="dayInput" /></div>
+      <button class="btn btn-ghost" id="nextDay" title="Next day">&rarr;</button>
+      <button class="btn btn-ghost" id="todayBtn">Today</button>
+      <div class="defs">
+        <div><label>Default daily salary</label><input type="number" id="defSal" min="0" step="0.01" placeholder="0.00" /></div>
+        <div><label>Default transport</label><input type="number" id="defTr" min="0" step="0.01" placeholder="0.00" /></div>
+      </div>
+    </div>
+
+    <div id="banner"></div>
+
+    <div class="summary" id="summary"></div>
+    <div class="daytotals" id="dayTotals"></div>
+
+    <div class="grid" id="cards"></div>
+  </div>
+</div>
+
+<div class="savebar hidden" id="savebar">
+  <span id="dirtyCount">No unsaved changes</span>
+  <button class="btn" id="saveAllBtn" disabled>Save all changes</button>
+</div>
+
+<script>
+const EDGE_FUNCTION_URL = "https://acdyletpjdmrqddylgcn.supabase.co/functions/v1/smart-responder";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjZHlsZXRwamRtcnFkZHlsZ2NuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4MDA2NTUsImV4cCI6MjEwNTM3NjY1NX0.2JaoROSxmbbo1Dah-oiBqKULru1Gz8koL0wBlMJbEyI";
+const SESSION_KEY = 'dailySalaryAdmin';
+const ATT = { present:'Present', half_day:'Half day', absent:'Absent', leave:'Leave' };
+
+function gsRun(fn, ...args){
+  return fetch(EDGE_FUNCTION_URL, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer ' + SUPABASE_ANON_KEY },
+    body: JSON.stringify({ fn, args })
+  }).then(r => r.json()).then(d => { if(!d.ok) throw new Error(d.error || 'Request failed.'); return d.result; });
+}
+const $ = id => document.getElementById(id);
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rs = n => 'Rs. ' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 });
+const ymd = d => { const p = n => String(n).padStart(2,'0'); return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()); };
+const niceDate = s => new Date(s + 'T00:00:00').toLocaleDateString([], { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+
+let admin = null, techs = [], existing = {}, currentDay = ymd(new Date()), loadedDay = null;
+
+/* ---------- login ---------- */
+async function doLogin(){
+  $('loginErr').textContent = '';
+  const u = $('lu').value.trim(), p = $('lp').value;
+  if(!u || !p){ $('loginErr').textContent = 'Enter username and password.'; return; }
+  $('loginBtn').disabled = true;
+  try{
+    const r = await gsRun('loginUser', u, p);
+    if(!r || r.role !== 'admin'){ $('loginErr').textContent = 'This login is not an admin account.'; $('loginBtn').disabled = false; return; }
+    admin = r;
+    try{ sessionStorage.setItem(SESSION_KEY, JSON.stringify(r)); }catch(e){}
+    start();
+  }catch(e){ $('loginErr').textContent = e.message || 'Login failed.'; }
+  $('loginBtn').disabled = false;
+}
+$('loginBtn').addEventListener('click', doLogin);
+$('lp').addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
+$('logoutBtn').addEventListener('click', () => { try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){} location.reload(); });
+try{ const s = sessionStorage.getItem(SESSION_KEY); if(s){ admin = JSON.parse(s); } }catch(e){}
+
+/* ---------- startup ---------- */
+async function start(){
+  $('loginBox').classList.add('hidden'); $('main').classList.remove('hidden'); $('savebar').classList.remove('hidden');
+  $('whoName').textContent = 'Signed in as ' + (admin.name || admin.username || 'admin');
+  try{ const d = JSON.parse(localStorage.getItem('dailySalaryDefaults') || '{}'); $('defSal').value = d.sal || ''; $('defTr').value = d.tr || ''; }catch(e){}
+  ['defSal','defTr'].forEach(id => $(id).addEventListener('change', () => {
+    try{ localStorage.setItem('dailySalaryDefaults', JSON.stringify({ sal:$('defSal').value, tr:$('defTr').value })); }catch(e){}
+  }));
+  $('cards').innerHTML = '<div class="empty">Loading…</div>';
+  try{
+    const all = await gsRun('listTechnicians');
+    techs = all.filter(t => t.active && t.role !== 'admin').sort((a,b) => a.name.localeCompare(b.name));
+  }catch(e){ $('cards').innerHTML = '<div class="empty">Could not load technicians: ' + esc(e.message) + '</div>'; return; }
+  $('dayInput').value = currentDay;
+  loadDay();
+}
+if(admin) start();
+
+/* ---------- load a day ---------- */
+function dirtyCards(){ return Array.from(document.querySelectorAll('.tc.dirty')); }
+
+async function goToDay(d){
+  if(dirtyCards().length && !confirm('You have unsaved changes for ' + currentDay + '. Discard them and change the date?')){ $('dayInput').value = currentDay; return; }
+  currentDay = d; $('dayInput').value = d; loadDay();
+}
+$('dayInput').addEventListener('change', e => { if(e.target.value) goToDay(e.target.value); else e.target.value = currentDay; });
+$('prevDay').addEventListener('click', () => { const d = new Date(currentDay + 'T00:00:00'); d.setDate(d.getDate() - 1); goToDay(ymd(d)); });
+$('nextDay').addEventListener('click', () => { const d = new Date(currentDay + 'T00:00:00'); d.setDate(d.getDate() + 1); goToDay(ymd(d)); });
+$('todayBtn').addEventListener('click', () => goToDay(ymd(new Date())));
+
+async function loadDay(){
+  $('cards').innerHTML = '<div class="empty">Loading…</div>'; $('banner').innerHTML = '';
+  try{
+    const list = await gsRun('listSalaryEntries', null, currentDay, currentDay);
+    existing = {}; list.forEach(e => { existing[e.technician_id] = e; });
+    loadedDay = currentDay;
+    renderCards(); renderSummary(); updateDirty();
+  }catch(e){ $('cards').innerHTML = '<div class="empty">Could not load: ' + esc(e.message) + '</div>'; }
+}
+
+/* ---------- summary: working / absent / leave / not updated ---------- */
+function renderSummary(){
+  const groups = { work:[], absent:[], leave:[], none:[] };
+  let sPaid = 0, tPaid = 0, sDue = 0, tDue = 0, updated = 0;
+  techs.forEach(t => {
+    const e = existing[t.id];
+    if(!e){ groups.none.push(esc(t.name)); return; }
+    updated++;
+    sPaid += Number(e.salary_paid); tPaid += Number(e.transport_paid); sDue += Number(e.salary_due); tDue += Number(e.transport_due);
+    if(e.attendance === 'present') groups.work.push(esc(t.name));
+    else if(e.attendance === 'half_day') groups.work.push(esc(t.name) + ' <i>(half day)</i>');
+    else if(e.attendance === 'absent') groups.absent.push(esc(t.name));
+    else groups.leave.push(esc(t.name));
+  });
+  const tile = (label, arr, c) => `<div class="tile" style="--c:${c}"><div class="l">${label}</div><div class="n">${arr.length}</div><div class="names">${arr.join(', ') || '<i>—</i>'}</div></div>`;
+  $('summary').innerHTML = tile('Working', groups.work, 'var(--success)') + tile('Absent', groups.absent, 'var(--danger)') +
+                           tile('On leave', groups.leave, 'var(--grey)') + tile('Not updated yet', groups.none, 'var(--warn)');
+  $('dayTotals').innerHTML = `${niceDate(currentDay)} — Earned: salary <b>${rs(sDue)}</b>, transport <b>${rs(tDue)}</b> · Paid: salary <b>${rs(sPaid)}</b>, transport <b>${rs(tPaid)}</b>`;
+  $('banner').innerHTML = updated
+    ? `<div class="banner warn">⚠ ${updated} of ${techs.length} technician${techs.length === 1 ? '' : 's'} already ha${updated === 1 ? 's' : 've'} salary details saved for this date (amber cards). Saving them again will replace the earlier entry.</div>`
+    : (techs.length ? '<div class="banner info">No salary details saved for this date yet.</div>' : '');
+}
+
+/* ---------- cards ---------- */
+function cardHtml(t){
+  const e = existing[t.id];
+  const v = k => e ? e[k] : '';
+  const att = e ? e.attendance : '';
+  const attBtns = Object.keys(ATT).map(a => `<button type="button" data-a="${a}" class="${att === a ? 'on' : ''}">${ATT[a]}</button>`).join('');
+  const old = e ? `<div class="tc-note-old">Already updated: ${ATT[e.attendance]} · salary ${rs(e.salary_paid)} paid of ${rs(e.salary_due)} · transport ${rs(e.transport_paid)} paid of ${rs(e.transport_due)}</div>` : '';
+  const num = (f, label, val) => `<div><label>${label}</label><input type="number" min="0" step="0.01" data-f="${f}" value="${val === '' ? '' : Number(val)}" placeholder="0.00" /></div>`;
+  return `<div class="tc ${e ? 'saved' : ''}" data-id="${t.id}" data-att="${att}">
+    <div class="tc-head"><b>${esc(t.name)}</b><span class="pill ${e ? 'done' : 'none'}">${e ? 'Updated' : 'Not updated'}</span></div>
+    ${old}
+    <div class="att">${attBtns}</div>
+    <div class="amts">${num('salDue','Salary earned',v('salary_due'))}${num('salPaid','Salary paid',v('salary_paid'))}${num('trDue','Transport earned',v('transport_due'))}${num('trPaid','Transport paid',v('transport_paid'))}</div>
+    <input data-f="note" placeholder="Note (optional)" value="${esc(e ? e.note || '' : '')}" />
+    <button class="btn save-one" type="button">${e ? 'Update entry' : 'Save entry'}</button>
+  </div>`;
+}
+function renderCards(){
+  $('cards').innerHTML = techs.length ? techs.map(cardHtml).join('') : '<div class="empty">No active technicians found.</div>';
+}
+function replaceCard(id){
+  const t = techs.find(x => x.id === id), old = document.querySelector(`.tc[data-id="${id}"]`);
+  const tmp = document.createElement('div'); tmp.innerHTML = cardHtml(t); old.replaceWith(tmp.firstElementChild);
+}
+function markDirty(card){
+  card.classList.add('dirty');
+  const pill = card.querySelector('.pill'); pill.className = 'pill edit'; pill.textContent = 'Unsaved';
+  updateDirty();
+}
+function updateDirty(){
+  const n = dirtyCards().length;
+  $('dirtyCount').textContent = n ? n + ' unsaved change' + (n === 1 ? '' : 's') : 'No unsaved changes';
+  $('saveAllBtn').disabled = !n;
+}
+
+$('cards').addEventListener('input', e => { const c = e.target.closest('.tc'); if(c) { delete c.dataset.autoSal; markDirty(c); } });
+$('cards').addEventListener('click', e => {
+  const card = e.target.closest('.tc'); if(!card) return;
+  const ab = e.target.closest('.att button');
+  if(ab){ setAttendance(card, ab.dataset.a); return; }
+  if(e.target.closest('.save-one')) saveCards([card]);
+});
+
+/* Choosing an attendance status auto-fills the "earned" boxes from the defaults (only over empty / 0 / previously auto-filled values). */
+function setAttendance(card, a){
+  card.dataset.att = a;
+  card.querySelectorAll('.att button').forEach(b => b.classList.toggle('on', b.dataset.a === a));
+  const sal = card.querySelector('[data-f="salDue"]'), tr = card.querySelector('[data-f="trDue"]');
+  const dS = Number($('defSal').value) || 0, dT = Number($('defTr').value) || 0;
+  const free = (el, key) => el.value === '' || Number(el.value) === 0 || el.value === card.dataset[key];
+  if(a === 'absent' || a === 'leave'){ sal.value = 0; tr.value = 0; card.dataset.autoSal = ''; card.dataset.autoTr = ''; }
+  else{
+    const sv = a === 'half_day' ? +(dS / 2).toFixed(2) : dS;
+    if(dS && free(sal, 'autoSal')){ sal.value = sv; card.dataset.autoSal = String(sv); }
+    if(dT && free(tr, 'autoTr')){ tr.value = dT; card.dataset.autoTr = String(dT); }
+  }
+  markDirty(card);
+}
+
+/* ---------- saving (with same-day warning) ---------- */
+function readCard(card){
+  const n = f => { const v = card.querySelector(`[data-f="${f}"]`).value; return v === '' ? 0 : Number(v); };
+  return { id: card.dataset.id, att: card.dataset.att, salDue: n('salDue'), salPaid: n('salPaid'), trDue: n('trDue'), trPaid: n('trPaid'),
+           note: card.querySelector('[data-f="note"]').value.trim() || null };
+}
+function describe(e){
+  return `${ATT[e.attendance]}, salary ${rs(e.salary_paid)} paid / ${rs(e.salary_due)} earned, transport ${rs(e.transport_paid)} paid / ${rs(e.transport_due)} earned`;
+}
+async function saveCards(cards){
+  const rows = cards.map(readCard);
+  for(const r of rows){
+    const name = techs.find(t => t.id === r.id).name;
+    if(!r.att){ alert(name + ': choose Present, Half day, Absent or Leave first.'); return; }
+    if([r.salDue, r.salPaid, r.trDue, r.trPaid].some(x => isNaN(x) || x < 0)){ alert(name + ': amounts must be zero or more.'); return; }
+  }
+  // WARNING: same technician + same day already saved
+  const dupes = rows.filter(r => existing[r.id]);
+  if(dupes.length){
+    const lines = dupes.map(r => '• ' + techs.find(t => t.id === r.id).name + ' — currently: ' + describe(existing[r.id])).join('\n');
+    if(!confirm('⚠ Salary details for ' + currentDay + ' were already updated for:\n\n' + lines + '\n\nSaving will REPLACE the earlier entry. Continue?')) return;
+  }
+  if(currentDay > ymd(new Date()) && !confirm('⚠ ' + currentDay + ' is in the future. Save anyway?')) return;
+
+  const btns = document.querySelectorAll('.save-one, #saveAllBtn'); btns.forEach(b => b.disabled = true);
+  const failed = [];
+  for(const r of rows){
+    try{
+      await gsRun('upsertSalaryEntry', r.id, currentDay, r.att, r.salDue, r.trDue, r.salPaid, r.trPaid, r.note, admin.id);
+      existing[r.id] = { technician_id:r.id, entry_date:currentDay, attendance:r.att, salary_due:r.salDue, transport_due:r.trDue,
+                         salary_paid:r.salPaid, transport_paid:r.trPaid, note:r.note };
+      replaceCard(r.id);
+    }catch(e){ failed.push(techs.find(t => t.id === r.id).name + ': ' + e.message); }
+  }
+  btns.forEach(b => b.disabled = false);
+  renderSummary(); updateDirty();
+  if(failed.length) alert('Some entries could not be saved:\n' + failed.join('\n'));
+}
+$('saveAllBtn').addEventListener('click', () => saveCards(dirtyCards()));
+window.addEventListener('beforeunload', e => { if(dirtyCards().length){ e.preventDefault(); e.returnValue = ''; } });
+</script>
+</body>
+</html>
