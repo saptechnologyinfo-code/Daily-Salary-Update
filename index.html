@@ -70,6 +70,13 @@
   .att button.on[data-a="half_day"]{background:var(--warn);border-color:var(--warn);color:#fff;}
   .att button.on[data-a="absent"]{background:var(--danger);border-color:var(--danger);color:#fff;}
   .att button.on[data-a="leave"]{background:var(--grey);border-color:var(--grey);color:#fff;}
+  .timerow{display:none;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+  #cards.show-times .timerow, .tc.has-times .timerow{display:grid;}
+  .tin{display:flex;gap:5px;} .tin input{min-width:0;}
+  .now{border:1px solid var(--border);background:var(--input);color:var(--text);border-radius:8px;padding:0 8px;font-size:.7rem;font-weight:700;}
+  .hrs{font-size:.78rem;color:var(--muted);margin:-2px 0 8px;} .hrs:empty{display:none;}
+  .tgl{display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer;text-transform:none;font-weight:600;color:var(--text);margin:0 0 10px;}
+  .tgl input{width:auto;}
   .amts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
   .tc .save-one{width:100%;margin-top:8px;}
 
@@ -104,6 +111,7 @@
       <div class="dt"><label>Date</label><input type="date" id="dayInput" /></div>
       <button class="btn btn-ghost" id="nextDay" title="Next day">&rarr;</button>
       <button class="btn btn-ghost" id="todayBtn">Today</button>
+      <div><label class="tgl" title="Show optional in/out time boxes on every card"><input type="checkbox" id="trackTimes" /> ⏱ Track in/out time</label></div>
       <div class="defs">
         <div><label>Default daily salary</label><input type="number" id="defSal" min="0" step="0.01" placeholder="0.00" /></div>
         <div><label>Default transport</label><input type="number" id="defTr" min="0" step="0.01" placeholder="0.00" /></div>
@@ -143,6 +151,10 @@ const rs = n => 'Rs. ' + Number(n || 0).toLocaleString(undefined, { minimumFract
 const ymd = d => { const p = n => String(n).padStart(2,'0'); return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()); };
 const niceDate = s => new Date(s + 'T00:00:00').toLocaleDateString([], { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 
+function hoursMin(tin, tout){ if(!tin || !tout) return null; const a = tin.split(':').map(Number), b = tout.split(':').map(Number); let m = (b[0]*60 + b[1]) - (a[0]*60 + a[1]); if(m < 0) m += 1440; return m; }
+const hoursTxt = m => m == null ? '' : Math.floor(m/60) + 'h ' + String(m % 60).padStart(2,'0') + 'm';
+function timesTxt(e){ if(!e || (!e.time_in && !e.time_out)) return ''; const m = hoursMin(e.time_in, e.time_out); return 'In ' + (e.time_in || '—') + ' · Out ' + (e.time_out || '—') + (m != null ? ' (' + hoursTxt(m) + ')' : ''); }
+
 let admin = null, techs = [], existing = {}, currentDay = ymd(new Date()), loadedDay = null;
 
 /* ---------- login ---------- */
@@ -173,6 +185,12 @@ async function start(){
   ['defSal','defTr'].forEach(id => $(id).addEventListener('change', () => {
     try{ localStorage.setItem('dailySalaryDefaults', JSON.stringify({ sal:$('defSal').value, tr:$('defTr').value })); }catch(e){}
   }));
+  try{ $('trackTimes').checked = localStorage.getItem('dailySalaryTrackTimes') === '1'; }catch(e){}
+  $('cards').classList.toggle('show-times', $('trackTimes').checked);
+  $('trackTimes').addEventListener('change', () => {
+    $('cards').classList.toggle('show-times', $('trackTimes').checked);
+    try{ localStorage.setItem('dailySalaryTrackTimes', $('trackTimes').checked ? '1' : '0'); }catch(e){}
+  });
   $('cards').innerHTML = '<div class="empty">Loading…</div>';
   try{
     const all = await gsRun('listTechnicians');
@@ -208,21 +226,24 @@ async function loadDay(){
 /* ---------- summary: working / absent / leave / not updated ---------- */
 function renderSummary(){
   const groups = { work:[], absent:[], leave:[], none:[] };
-  let sPaid = 0, tPaid = 0, sDue = 0, tDue = 0, updated = 0;
+  let sPaid = 0, tPaid = 0, sDue = 0, tDue = 0, updated = 0, hrsTotal = 0;
   techs.forEach(t => {
     const e = existing[t.id];
     if(!e){ groups.none.push(esc(t.name)); return; }
     updated++;
     sPaid += Number(e.salary_paid); tPaid += Number(e.transport_paid); sDue += Number(e.salary_due); tDue += Number(e.transport_due);
-    if(e.attendance === 'present') groups.work.push(esc(t.name));
-    else if(e.attendance === 'half_day') groups.work.push(esc(t.name) + ' <i>(half day)</i>');
+    const hm = hoursMin(e.time_in, e.time_out); if(hm != null) hrsTotal += hm;
+    const bits = []; if(e.attendance === 'half_day') bits.push('half day');
+    if(e.time_in || e.time_out) bits.push((e.time_in || '?') + '–' + (e.time_out || '?') + (hm != null ? ', ' + hoursTxt(hm) : ''));
+    const suffix = bits.length ? ' <i>(' + bits.join(', ') + ')</i>' : '';
+    if(e.attendance === 'present' || e.attendance === 'half_day') groups.work.push(esc(t.name) + suffix);
     else if(e.attendance === 'absent') groups.absent.push(esc(t.name));
     else groups.leave.push(esc(t.name));
   });
   const tile = (label, arr, c) => `<div class="tile" style="--c:${c}"><div class="l">${label}</div><div class="n">${arr.length}</div><div class="names">${arr.join(', ') || '<i>—</i>'}</div></div>`;
   $('summary').innerHTML = tile('Working', groups.work, 'var(--success)') + tile('Absent', groups.absent, 'var(--danger)') +
                            tile('On leave', groups.leave, 'var(--grey)') + tile('Not updated yet', groups.none, 'var(--warn)');
-  $('dayTotals').innerHTML = `${niceDate(currentDay)} — Earned: salary <b>${rs(sDue)}</b>, transport <b>${rs(tDue)}</b> · Paid: salary <b>${rs(sPaid)}</b>, transport <b>${rs(tPaid)}</b>`;
+  $('dayTotals').innerHTML = `${niceDate(currentDay)} — Earned: salary <b>${rs(sDue)}</b>, transport <b>${rs(tDue)}</b> · Paid: salary <b>${rs(sPaid)}</b>, transport <b>${rs(tPaid)}</b>` + (hrsTotal ? ` · Hours logged: <b>${hoursTxt(hrsTotal)}</b>` : '');
   $('banner').innerHTML = updated
     ? `<div class="banner warn">⚠ ${updated} of ${techs.length} technician${techs.length === 1 ? '' : 's'} already ha${updated === 1 ? 's' : 've'} salary details saved for this date (amber cards). Saving them again will replace the earlier entry.</div>`
     : (techs.length ? '<div class="banner info">No salary details saved for this date yet.</div>' : '');
@@ -234,12 +255,16 @@ function cardHtml(t){
   const v = k => e ? e[k] : '';
   const att = e ? e.attendance : '';
   const attBtns = Object.keys(ATT).map(a => `<button type="button" data-a="${a}" class="${att === a ? 'on' : ''}">${ATT[a]}</button>`).join('');
-  const old = e ? `<div class="tc-note-old">Already updated: ${ATT[e.attendance]} · salary ${rs(e.salary_paid)} paid of ${rs(e.salary_due)} · transport ${rs(e.transport_paid)} paid of ${rs(e.transport_due)}</div>` : '';
+  const old = e ? `<div class="tc-note-old">Already updated: ${ATT[e.attendance]} · salary ${rs(e.salary_paid)} paid of ${rs(e.salary_due)} · transport ${rs(e.transport_paid)} paid of ${rs(e.transport_due)}${timesTxt(e) ? ' · ' + timesTxt(e) : ''}</div>` : '';
   const num = (f, label, val) => `<div><label>${label}</label><input type="number" min="0" step="0.01" data-f="${f}" value="${val === '' ? '' : Number(val)}" placeholder="0.00" /></div>`;
-  return `<div class="tc ${e ? 'saved' : ''}" data-id="${t.id}" data-att="${att}">
+  const hasTimes = !!(e && (e.time_in || e.time_out));
+  const timeBox = (f, label, val) => `<div><label>${label}</label><div class="tin"><input type="time" data-f="${f}" value="${val || ''}" /><button type="button" class="now" data-now="${f}" title="Set to the current time">Now</button></div></div>`;
+  return `<div class="tc ${e ? 'saved' : ''} ${hasTimes ? 'has-times' : ''}" data-id="${t.id}" data-att="${att}">
     <div class="tc-head"><b>${esc(t.name)}</b><span class="pill ${e ? 'done' : 'none'}">${e ? 'Updated' : 'Not updated'}</span></div>
     ${old}
     <div class="att">${attBtns}</div>
+    <div class="timerow">${timeBox('timeIn', 'In time (optional)', e && e.time_in)}${timeBox('timeOut', 'Out time (optional)', e && e.time_out)}</div>
+    <div class="hrs">${e && hoursMin(e.time_in, e.time_out) != null ? 'Worked ' + hoursTxt(hoursMin(e.time_in, e.time_out)) : ''}</div>
     <div class="amts">${num('salDue','Salary earned',v('salary_due'))}${num('salPaid','Salary paid',v('salary_paid'))}${num('trDue','Transport earned',v('transport_due'))}${num('trPaid','Transport paid',v('transport_paid'))}</div>
     <input data-f="note" placeholder="Note (optional)" value="${esc(e ? e.note || '' : '')}" />
     <button class="btn save-one" type="button">${e ? 'Update entry' : 'Save entry'}</button>
@@ -263,9 +288,15 @@ function updateDirty(){
   $('saveAllBtn').disabled = !n;
 }
 
-$('cards').addEventListener('input', e => { const c = e.target.closest('.tc'); if(c) { delete c.dataset.autoSal; markDirty(c); } });
+function updateHrs(card){
+  const m = hoursMin(card.querySelector('[data-f="timeIn"]').value, card.querySelector('[data-f="timeOut"]').value);
+  card.querySelector('.hrs').textContent = m != null ? 'Worked ' + hoursTxt(m) + (card.querySelector('[data-f="timeOut"]').value < card.querySelector('[data-f="timeIn"]').value ? ' (overnight)' : '') : '';
+}
+$('cards').addEventListener('input', e => { const c = e.target.closest('.tc'); if(c) { delete c.dataset.autoSal; markDirty(c); updateHrs(c); } });
 $('cards').addEventListener('click', e => {
   const card = e.target.closest('.tc'); if(!card) return;
+  const nb = e.target.closest('.now');
+  if(nb){ const d = new Date(), p = n => String(n).padStart(2, '0'); card.querySelector(`[data-f="${nb.dataset.now}"]`).value = p(d.getHours()) + ':' + p(d.getMinutes()); markDirty(card); updateHrs(card); return; }
   const ab = e.target.closest('.att button');
   if(ab){ setAttendance(card, ab.dataset.a); return; }
   if(e.target.closest('.save-one')) saveCards([card]);
@@ -278,7 +309,8 @@ function setAttendance(card, a){
   const sal = card.querySelector('[data-f="salDue"]'), tr = card.querySelector('[data-f="trDue"]');
   const dS = Number($('defSal').value) || 0, dT = Number($('defTr').value) || 0;
   const free = (el, key) => el.value === '' || Number(el.value) === 0 || el.value === card.dataset[key];
-  if(a === 'absent' || a === 'leave'){ sal.value = 0; tr.value = 0; card.dataset.autoSal = ''; card.dataset.autoTr = ''; }
+  if(a === 'absent' || a === 'leave'){ sal.value = 0; tr.value = 0; card.dataset.autoSal = ''; card.dataset.autoTr = '';
+    card.querySelector('[data-f="timeIn"]').value = ''; card.querySelector('[data-f="timeOut"]').value = ''; updateHrs(card); }
   else{
     const sv = a === 'half_day' ? +(dS / 2).toFixed(2) : dS;
     if(dS && free(sal, 'autoSal')){ sal.value = sv; card.dataset.autoSal = String(sv); }
@@ -291,10 +323,11 @@ function setAttendance(card, a){
 function readCard(card){
   const n = f => { const v = card.querySelector(`[data-f="${f}"]`).value; return v === '' ? 0 : Number(v); };
   return { id: card.dataset.id, att: card.dataset.att, salDue: n('salDue'), salPaid: n('salPaid'), trDue: n('trDue'), trPaid: n('trPaid'),
-           note: card.querySelector('[data-f="note"]').value.trim() || null };
+           note: card.querySelector('[data-f="note"]').value.trim() || null,
+           timeIn: card.querySelector('[data-f="timeIn"]').value || null, timeOut: card.querySelector('[data-f="timeOut"]').value || null };
 }
 function describe(e){
-  return `${ATT[e.attendance]}, salary ${rs(e.salary_paid)} paid / ${rs(e.salary_due)} earned, transport ${rs(e.transport_paid)} paid / ${rs(e.transport_due)} earned`;
+  return `${ATT[e.attendance]}, salary ${rs(e.salary_paid)} paid / ${rs(e.salary_due)} earned, transport ${rs(e.transport_paid)} paid / ${rs(e.transport_due)} earned` + (timesTxt(e) ? ', ' + timesTxt(e) : '');
 }
 async function saveCards(cards){
   const rows = cards.map(readCard);
@@ -302,6 +335,7 @@ async function saveCards(cards){
     const name = techs.find(t => t.id === r.id).name;
     if(!r.att){ alert(name + ': choose Present, Half day, Absent or Leave first.'); return; }
     if([r.salDue, r.salPaid, r.trDue, r.trPaid].some(x => isNaN(x) || x < 0)){ alert(name + ': amounts must be zero or more.'); return; }
+    if(r.timeIn && r.timeOut && r.timeOut < r.timeIn && !confirm(name + ': Out time (' + r.timeOut + ') is earlier than In time (' + r.timeIn + '). Count this as an overnight shift?')) return;
   }
   // WARNING: same technician + same day already saved
   const dupes = rows.filter(r => existing[r.id]);
@@ -315,9 +349,9 @@ async function saveCards(cards){
   const failed = [];
   for(const r of rows){
     try{
-      await gsRun('upsertSalaryEntry', r.id, currentDay, r.att, r.salDue, r.trDue, r.salPaid, r.trPaid, r.note, admin.id);
+      await gsRun('upsertSalaryEntry', r.id, currentDay, r.att, r.salDue, r.trDue, r.salPaid, r.trPaid, r.note, admin.id, r.timeIn, r.timeOut);
       existing[r.id] = { technician_id:r.id, entry_date:currentDay, attendance:r.att, salary_due:r.salDue, transport_due:r.trDue,
-                         salary_paid:r.salPaid, transport_paid:r.trPaid, note:r.note };
+                         salary_paid:r.salPaid, transport_paid:r.trPaid, note:r.note, time_in:r.timeIn, time_out:r.timeOut };
       replaceCard(r.id);
     }catch(e){ failed.push(techs.find(t => t.id === r.id).name + ': ' + e.message); }
   }
