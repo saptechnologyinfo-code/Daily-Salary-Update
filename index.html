@@ -77,6 +77,13 @@
   .hrs{font-size:.78rem;color:var(--muted);margin:-2px 0 8px;} .hrs:empty{display:none;}
   .tgl{display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer;text-transform:none;font-weight:600;color:var(--text);margin:0 0 10px;}
   .tgl input{width:auto;}
+  .etfrow{margin-bottom:8px;}
+  .badge-etf{font-size:.66rem;font-weight:800;padding:3px 8px;border-radius:20px;background:#7c3aed;color:#fff;}
+  details.settle{border:1px dashed var(--border);border-radius:10px;padding:8px 10px;margin-bottom:8px;}
+  details.settle summary{cursor:pointer;font-weight:700;font-size:.82rem;color:var(--danger);}
+  details.settle .hint{font-size:.74rem;color:var(--muted);margin:6px 0 8px;}
+  details.settle .amts{margin-bottom:6px;}
+  .mini{border:1px solid var(--border);background:var(--input);color:var(--text);border-radius:8px;padding:10px 8px;font-size:.74rem;font-weight:700;width:100%;}
   .amts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
   .tc .save-one{width:100%;margin-top:8px;}
 
@@ -115,6 +122,7 @@
       <div class="defs">
         <div><label>Default daily salary</label><input type="number" id="defSal" min="0" step="0.01" placeholder="0.00" /></div>
         <div><label>Default transport</label><input type="number" id="defTr" min="0" step="0.01" placeholder="0.00" /></div>
+        <div><label>ETF rate % (members)</label><input type="number" id="defEtf" min="0" step="0.01" placeholder="0" /></div>
       </div>
     </div>
 
@@ -155,6 +163,7 @@ function hoursMin(tin, tout){ if(!tin || !tout) return null; const a = tin.split
 const hoursTxt = m => m == null ? '' : Math.floor(m/60) + 'h ' + String(m % 60).padStart(2,'0') + 'm';
 function timesTxt(e){ if(!e || (!e.time_in && !e.time_out)) return ''; const m = hoursMin(e.time_in, e.time_out); return 'In ' + (e.time_in || '—') + ' · Out ' + (e.time_out || '—') + (m != null ? ' (' + hoursTxt(m) + ')' : ''); }
 
+let etfSet = new Set(), bf = {};
 let admin = null, techs = [], existing = {}, currentDay = ymd(new Date()), loadedDay = null;
 
 /* ---------- login ---------- */
@@ -181,9 +190,9 @@ try{ const s = sessionStorage.getItem(SESSION_KEY); if(s){ admin = JSON.parse(s)
 async function start(){
   $('loginBox').classList.add('hidden'); $('main').classList.remove('hidden'); $('savebar').classList.remove('hidden');
   $('whoName').textContent = 'Signed in as ' + (admin.name || admin.username || 'admin');
-  try{ const d = JSON.parse(localStorage.getItem('dailySalaryDefaults') || '{}'); $('defSal').value = d.sal || ''; $('defTr').value = d.tr || ''; }catch(e){}
-  ['defSal','defTr'].forEach(id => $(id).addEventListener('change', () => {
-    try{ localStorage.setItem('dailySalaryDefaults', JSON.stringify({ sal:$('defSal').value, tr:$('defTr').value })); }catch(e){}
+  try{ const d = JSON.parse(localStorage.getItem('dailySalaryDefaults') || '{}'); $('defSal').value = d.sal || ''; $('defTr').value = d.tr || ''; $('defEtf').value = d.etf || ''; }catch(e){}
+  ['defSal','defTr','defEtf'].forEach(id => $(id).addEventListener('change', () => {
+    try{ localStorage.setItem('dailySalaryDefaults', JSON.stringify({ sal:$('defSal').value, tr:$('defTr').value, etf:$('defEtf').value })); }catch(e){}
   }));
   try{ $('trackTimes').checked = localStorage.getItem('dailySalaryTrackTimes') === '1'; }catch(e){}
   $('cards').classList.toggle('show-times', $('trackTimes').checked);
@@ -216,7 +225,13 @@ $('todayBtn').addEventListener('click', () => goToDay(ymd(new Date())));
 async function loadDay(){
   $('cards').innerHTML = '<div class="empty">Loading…</div>'; $('banner').innerHTML = '';
   try{
-    const list = await gsRun('listSalaryEntries', null, currentDay, currentDay);
+    const [list, etfIds, bal] = await Promise.all([
+      gsRun('listSalaryEntries', null, currentDay, currentDay),
+      gsRun('listEtfMembers').catch(() => []),
+      gsRun('listSalaryBalances', currentDay).catch(() => [])
+    ]);
+    etfSet = new Set(etfIds);
+    bf = {}; bal.forEach(b => { bf[b.id] = { salary: Number(b.salary_arrears), transport: Number(b.transport_arrears) }; });
     existing = {}; list.forEach(e => { existing[e.technician_id] = e; });
     loadedDay = currentDay;
     renderCards(); renderSummary(); updateDirty();
@@ -226,12 +241,13 @@ async function loadDay(){
 /* ---------- summary: working / absent / leave / not updated ---------- */
 function renderSummary(){
   const groups = { work:[], absent:[], leave:[], none:[] };
-  let sPaid = 0, tPaid = 0, sDue = 0, tDue = 0, updated = 0, hrsTotal = 0;
+  let sPaid = 0, tPaid = 0, sDue = 0, tDue = 0, updated = 0, hrsTotal = 0, etfT = 0, setT = 0;
   techs.forEach(t => {
     const e = existing[t.id];
     if(!e){ groups.none.push(esc(t.name)); return; }
     updated++;
     sPaid += Number(e.salary_paid); tPaid += Number(e.transport_paid); sDue += Number(e.salary_due); tDue += Number(e.transport_due);
+    etfT += Number(e.etf_deduction || 0); setT += Number(e.arrears_salary_paid || 0) + Number(e.arrears_transport_paid || 0);
     const hm = hoursMin(e.time_in, e.time_out); if(hm != null) hrsTotal += hm;
     const bits = []; if(e.attendance === 'half_day') bits.push('half day');
     if(e.time_in || e.time_out) bits.push((e.time_in || '?') + '–' + (e.time_out || '?') + (hm != null ? ', ' + hoursTxt(hm) : ''));
@@ -240,10 +256,13 @@ function renderSummary(){
     else if(e.attendance === 'absent') groups.absent.push(esc(t.name));
     else groups.leave.push(esc(t.name));
   });
+  const bfAll = techs.reduce((a, t) => a + ((bf[t.id] || {}).salary || 0) + ((bf[t.id] || {}).transport || 0), 0);
   const tile = (label, arr, c) => `<div class="tile" style="--c:${c}"><div class="l">${label}</div><div class="n">${arr.length}</div><div class="names">${arr.join(', ') || '<i>—</i>'}</div></div>`;
   $('summary').innerHTML = tile('Working', groups.work, 'var(--success)') + tile('Absent', groups.absent, 'var(--danger)') +
                            tile('On leave', groups.leave, 'var(--grey)') + tile('Not updated yet', groups.none, 'var(--warn)');
-  $('dayTotals').innerHTML = `${niceDate(currentDay)} — Earned: salary <b>${rs(sDue)}</b>, transport <b>${rs(tDue)}</b> · Paid: salary <b>${rs(sPaid)}</b>, transport <b>${rs(tPaid)}</b>` + (hrsTotal ? ` · Hours logged: <b>${hoursTxt(hrsTotal)}</b>` : '');
+  $('dayTotals').innerHTML = `${niceDate(currentDay)} — Earned: salary <b>${rs(sDue)}</b>, transport <b>${rs(tDue)}</b> · Paid: salary <b>${rs(sPaid)}</b>, transport <b>${rs(tPaid)}</b>` + (hrsTotal ? ` · Hours logged: <b>${hoursTxt(hrsTotal)}</b>` : '')
+    + (etfT ? ` · ETF deducted: <b>${rs(etfT)}</b>` : '') + (setT ? ` · Arrears settled: <b>${rs(setT)}</b>` : '')
+    + (bfAll > 0.005 ? ` · Arrears brought forward (all): <b>${rs(bfAll)}</b>` : '');
   $('banner').innerHTML = updated
     ? `<div class="banner warn">⚠ ${updated} of ${techs.length} technician${techs.length === 1 ? '' : 's'} already ha${updated === 1 ? 's' : 've'} salary details saved for this date (amber cards). Saving them again will replace the earlier entry.</div>`
     : (techs.length ? '<div class="banner info">No salary details saved for this date yet.</div>' : '');
@@ -255,17 +274,30 @@ function cardHtml(t){
   const v = k => e ? e[k] : '';
   const att = e ? e.attendance : '';
   const attBtns = Object.keys(ATT).map(a => `<button type="button" data-a="${a}" class="${att === a ? 'on' : ''}">${ATT[a]}</button>`).join('');
-  const old = e ? `<div class="tc-note-old">Already updated: ${ATT[e.attendance]} · salary ${rs(e.salary_paid)} paid of ${rs(e.salary_due)} · transport ${rs(e.transport_paid)} paid of ${rs(e.transport_due)}${timesTxt(e) ? ' · ' + timesTxt(e) : ''}</div>` : '';
+  const old = e ? `<div class="tc-note-old">Already updated: ${ATT[e.attendance]} · salary ${rs(e.salary_paid)} paid of ${rs(e.salary_due)} · transport ${rs(e.transport_paid)} paid of ${rs(e.transport_due)}${timesTxt(e) ? ' · ' + timesTxt(e) : ''}${Number(e.etf_deduction) ? ' · ETF ' + rs(e.etf_deduction) : ''}${(Number(e.arrears_salary_paid) || Number(e.arrears_transport_paid)) ? ' · arrears settled ' + rs(Number(e.arrears_salary_paid) + Number(e.arrears_transport_paid)) : ''}</div>` : '';
   const num = (f, label, val) => `<div><label>${label}</label><input type="number" min="0" step="0.01" data-f="${f}" value="${val === '' ? '' : Number(val)}" placeholder="0.00" /></div>`;
   const hasTimes = !!(e && (e.time_in || e.time_out));
+  const isMember = etfSet.has(t.id) || !!(e && Number(e.etf_deduction) > 0);
+  const etfHtml = isMember ? `<div class="etfrow">${num('etf', 'ETF deduction (permanent member)', e ? e.etf_deduction : '')}</div>` : '';
+  const b = bf[t.id] || { salary: 0, transport: 0 }, outAll = b.salary + b.transport;
+  const hasSettle = !!(e && (Number(e.arrears_salary_paid) || Number(e.arrears_transport_paid)));
+  const settleHtml = (outAll > 0.005 || hasSettle) ? `<details class="settle" ${hasSettle ? 'open' : ''}>
+      <summary>💳 Arrears settlement — outstanding ${rs(Math.max(outAll, 0))}</summary>
+      <div class="hint">Before this day: salary ${rs(b.salary)} · transport ${rs(b.transport)}</div>
+      <div class="amts">${num('asal', 'Salary arrears paid', e ? e.arrears_salary_paid : '')}${num('atr', 'Transport arrears paid', e ? e.arrears_transport_paid : '')}</div>
+      <div class="amts"><div><label>Arrears day (optional)</label><input type="date" data-f="aday" value="${e && e.arrears_day ? e.arrears_day : ''}" /></div>
+        <div style="display:flex;align-items:flex-end;"><button type="button" class="mini" data-settleall="1">Settle all outstanding</button></div></div>
+    </details>` : '';
   const timeBox = (f, label, val) => `<div><label>${label}</label><div class="tin"><input type="time" data-f="${f}" value="${val || ''}" /><button type="button" class="now" data-now="${f}" title="Set to the current time">Now</button></div></div>`;
-  return `<div class="tc ${e ? 'saved' : ''} ${hasTimes ? 'has-times' : ''}" data-id="${t.id}" data-att="${att}">
-    <div class="tc-head"><b>${esc(t.name)}</b><span class="pill ${e ? 'done' : 'none'}">${e ? 'Updated' : 'Not updated'}</span></div>
+  return `<div class="tc ${e ? 'saved' : ''} ${hasTimes ? 'has-times' : ''}" data-id="${t.id}" data-att="${att}" ${e && Number(e.etf_deduction) > 0 ? 'data-etf-manual="1"' : ''}>
+    <div class="tc-head"><b>${esc(t.name)}</b><span style="display:flex;gap:6px;align-items:center;">${isMember ? '<span class="badge-etf" title="Permanent member — ETF deducted">ETF</span>' : ''}<span class="pill ${e ? 'done' : 'none'}">${e ? 'Updated' : 'Not updated'}</span></span></div>
     ${old}
     <div class="att">${attBtns}</div>
     <div class="timerow">${timeBox('timeIn', 'In time (optional)', e && e.time_in)}${timeBox('timeOut', 'Out time (optional)', e && e.time_out)}</div>
     <div class="hrs">${e && hoursMin(e.time_in, e.time_out) != null ? 'Worked ' + hoursTxt(hoursMin(e.time_in, e.time_out)) : ''}</div>
     <div class="amts">${num('salDue','Salary earned',v('salary_due'))}${num('salPaid','Salary paid',v('salary_paid'))}${num('trDue','Transport earned',v('transport_due'))}${num('trPaid','Transport paid',v('transport_paid'))}</div>
+    ${etfHtml}
+    ${settleHtml}
     <input data-f="note" placeholder="Note (optional)" value="${esc(e ? e.note || '' : '')}" />
     <button class="btn save-one" type="button">${e ? 'Update entry' : 'Save entry'}</button>
   </div>`;
@@ -292,9 +324,28 @@ function updateHrs(card){
   const m = hoursMin(card.querySelector('[data-f="timeIn"]').value, card.querySelector('[data-f="timeOut"]').value);
   card.querySelector('.hrs').textContent = m != null ? 'Worked ' + hoursTxt(m) + (card.querySelector('[data-f="timeOut"]').value < card.querySelector('[data-f="timeIn"]').value ? ' (overnight)' : '') : '';
 }
-$('cards').addEventListener('input', e => { const c = e.target.closest('.tc'); if(c) { delete c.dataset.autoSal; markDirty(c); updateHrs(c); } });
+function autoEtf(card, respectManual){
+  const f = card.querySelector('[data-f="etf"]'), rate = Number($('defEtf').value) || 0;
+  if(!f || !rate) return;
+  if(respectManual && card.dataset.etfManual === '1') return;
+  f.value = +((Number(card.querySelector('[data-f="salDue"]').value) || 0) * rate / 100).toFixed(2);
+}
+$('cards').addEventListener('input', e => {
+  const c = e.target.closest('.tc'); if(!c) return;
+  delete c.dataset.autoSal;
+  if(e.target.dataset.f === 'etf') c.dataset.etfManual = '1';
+  if(e.target.dataset.f === 'salDue') autoEtf(c, true);
+  markDirty(c); updateHrs(c);
+});
 $('cards').addEventListener('click', e => {
   const card = e.target.closest('.tc'); if(!card) return;
+  const sa = e.target.closest('[data-settleall]');
+  if(sa){
+    const b = bf[card.dataset.id] || { salary: 0, transport: 0 };
+    card.querySelector('[data-f="asal"]').value = Math.max(0, +b.salary.toFixed(2));
+    card.querySelector('[data-f="atr"]').value = Math.max(0, +b.transport.toFixed(2));
+    markDirty(card); return;
+  }
   const nb = e.target.closest('.now');
   if(nb){ const d = new Date(), p = n => String(n).padStart(2, '0'); card.querySelector(`[data-f="${nb.dataset.now}"]`).value = p(d.getHours()) + ':' + p(d.getMinutes()); markDirty(card); updateHrs(card); return; }
   const ab = e.target.closest('.att button');
@@ -310,33 +361,40 @@ function setAttendance(card, a){
   const dS = Number($('defSal').value) || 0, dT = Number($('defTr').value) || 0;
   const free = (el, key) => el.value === '' || Number(el.value) === 0 || el.value === card.dataset[key];
   if(a === 'absent' || a === 'leave'){ sal.value = 0; tr.value = 0; card.dataset.autoSal = ''; card.dataset.autoTr = '';
-    card.querySelector('[data-f="timeIn"]').value = ''; card.querySelector('[data-f="timeOut"]').value = ''; updateHrs(card); }
+    card.querySelector('[data-f="timeIn"]').value = ''; card.querySelector('[data-f="timeOut"]').value = ''; updateHrs(card);
+    const ef = card.querySelector('[data-f="etf"]'); if(ef) ef.value = 0; }
   else{
     const sv = a === 'half_day' ? +(dS / 2).toFixed(2) : dS;
     if(dS && free(sal, 'autoSal')){ sal.value = sv; card.dataset.autoSal = String(sv); }
     if(dT && free(tr, 'autoTr')){ tr.value = dT; card.dataset.autoTr = String(dT); }
+    autoEtf(card, true);
   }
   markDirty(card);
 }
 
 /* ---------- saving (with same-day warning) ---------- */
 function readCard(card){
-  const n = f => { const v = card.querySelector(`[data-f="${f}"]`).value; return v === '' ? 0 : Number(v); };
+  const n = f => { const el = card.querySelector(`[data-f="${f}"]`); return !el || el.value === '' ? 0 : Number(el.value); };
   return { id: card.dataset.id, att: card.dataset.att, salDue: n('salDue'), salPaid: n('salPaid'), trDue: n('trDue'), trPaid: n('trPaid'),
            note: card.querySelector('[data-f="note"]').value.trim() || null,
-           timeIn: card.querySelector('[data-f="timeIn"]').value || null, timeOut: card.querySelector('[data-f="timeOut"]').value || null };
+           timeIn: card.querySelector('[data-f="timeIn"]').value || null, timeOut: card.querySelector('[data-f="timeOut"]').value || null,
+           etf: n('etf'), asal: n('asal'), atr: n('atr'), aday: (card.querySelector('[data-f="aday"]') || {}).value || null };
 }
 function describe(e){
-  return `${ATT[e.attendance]}, salary ${rs(e.salary_paid)} paid / ${rs(e.salary_due)} earned, transport ${rs(e.transport_paid)} paid / ${rs(e.transport_due)} earned` + (timesTxt(e) ? ', ' + timesTxt(e) : '');
+  return `${ATT[e.attendance]}, salary ${rs(e.salary_paid)} paid / ${rs(e.salary_due)} earned, transport ${rs(e.transport_paid)} paid / ${rs(e.transport_due)} earned` + (timesTxt(e) ? ', ' + timesTxt(e) : '') + (Number(e.etf_deduction) ? ', ETF ' + rs(e.etf_deduction) : '') + ((Number(e.arrears_salary_paid) || Number(e.arrears_transport_paid)) ? ', arrears settled ' + rs(Number(e.arrears_salary_paid) + Number(e.arrears_transport_paid)) : '');
 }
 async function saveCards(cards){
   const rows = cards.map(readCard);
   for(const r of rows){
     const name = techs.find(t => t.id === r.id).name;
     if(!r.att){ alert(name + ': choose Present, Half day, Absent or Leave first.'); return; }
-    if([r.salDue, r.salPaid, r.trDue, r.trPaid].some(x => isNaN(x) || x < 0)){ alert(name + ': amounts must be zero or more.'); return; }
+    if([r.salDue, r.salPaid, r.trDue, r.trPaid, r.etf, r.asal, r.atr].some(x => isNaN(x) || x < 0)){ alert(name + ': amounts must be zero or more.'); return; }
     if(r.timeIn && r.timeOut && r.timeOut < r.timeIn && !confirm(name + ': Out time (' + r.timeOut + ') is earlier than In time (' + r.timeIn + '). Count this as an overnight shift?')) return;
   }
+  // WARNING: settlement larger than what is outstanding
+  const over = rows.filter(r => { const b = bf[r.id] || { salary: 0, transport: 0 };
+    return r.asal > b.salary + (r.salDue - r.salPaid) + 0.005 || r.atr > b.transport + (r.trDue - r.trPaid) + 0.005; });
+  if(over.length && !confirm('⚠ The arrears settlement is MORE than the outstanding arrears for:\n\n' + over.map(r => '• ' + techs.find(t => t.id === r.id).name).join('\n') + '\n\nSave anyway?')) return;
   // WARNING: same technician + same day already saved
   const dupes = rows.filter(r => existing[r.id]);
   if(dupes.length){
@@ -349,9 +407,10 @@ async function saveCards(cards){
   const failed = [];
   for(const r of rows){
     try{
-      await gsRun('upsertSalaryEntry', r.id, currentDay, r.att, r.salDue, r.trDue, r.salPaid, r.trPaid, r.note, admin.id, r.timeIn, r.timeOut);
+      await gsRun('upsertSalaryEntry', r.id, currentDay, r.att, r.salDue, r.trDue, r.salPaid, r.trPaid, r.note, admin.id, r.timeIn, r.timeOut, r.etf, r.asal, r.atr, r.aday);
       existing[r.id] = { technician_id:r.id, entry_date:currentDay, attendance:r.att, salary_due:r.salDue, transport_due:r.trDue,
-                         salary_paid:r.salPaid, transport_paid:r.trPaid, note:r.note, time_in:r.timeIn, time_out:r.timeOut };
+                         salary_paid:r.salPaid, transport_paid:r.trPaid, note:r.note, time_in:r.timeIn, time_out:r.timeOut,
+                         etf_deduction:r.etf, arrears_salary_paid:r.asal, arrears_transport_paid:r.atr, arrears_day:r.aday };
       replaceCard(r.id);
     }catch(e){ failed.push(techs.find(t => t.id === r.id).name + ': ' + e.message); }
   }
