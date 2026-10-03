@@ -8,24 +8,26 @@
   :root{
     --bg:#f1f5f9; --card:#ffffff; --text:#0f172a; --muted:#64748b; --border:#e2e8f0; --input:#f8fafc;
     --primary:#2563eb; --success:#059669; --warn:#d97706; --danger:#dc2626; --grey:#64748b;
-    --warn-bg:#fffbeb; --ok-bg:#ecfdf5; --blue-bg:#eff6ff;
+    --warn-bg:#fffbeb; --ok-bg:#ecfdf5; --blue-bg:#eff6ff; --err-bg:#fef2f2;
   }
   @media (prefers-color-scheme: dark){
     :root{ --bg:#0b1329; --card:#1c2541; --text:#f8fafc; --muted:#94a3b8; --border:#334155; --input:#0b1329;
       --primary:#3a86ff; --success:#06d6a0; --warn:#ff9f1c; --danger:#ef476f;
-      --warn-bg:#3a2a0a; --ok-bg:#0b3a2e; --blue-bg:#12305c; }
+      --warn-bg:#3a2a0a; --ok-bg:#0b3a2e; --blue-bg:#12305c; --err-bg:#3a1220; }
   }
   *{box-sizing:border-box;}
   html,body{margin:0;background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;}
-  body{padding:12px 12px 90px;}
-  .wrap{max-width:1100px;margin:0 auto;}
+  body{padding:12px 12px 100px;}
+  .wrap{max-width:1150px;margin:0 auto;}
   h1{font-size:1.25rem;margin:0;}
   label{display:block;font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
   input,select,textarea{width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--input);color:var(--text);font-size:.95rem;font-family:inherit;}
+  input:focus,select:focus{outline:2px solid var(--primary);outline-offset:0;}
   button{font-family:inherit;cursor:pointer;}
   .btn{background:var(--primary);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:700;font-size:.9rem;}
   .btn:disabled{opacity:.5;cursor:not-allowed;}
   .btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border);}
+  .btn-danger{background:var(--danger);}
   .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;}
   .hidden{display:none !important;}
   .topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
@@ -33,20 +35,28 @@
 
   #loginBox{max-width:380px;margin:60px auto;}
   #loginBox .card > div{margin-bottom:12px;}
+  .pwrow{display:flex;gap:6px;} .pwrow button{white-space:nowrap;padding:0 12px;}
   .err{color:var(--danger);font-size:.85rem;font-weight:600;margin-top:8px;min-height:1em;}
 
-  .daterow{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;}
+  /* date + defaults */
+  .daterow{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;}
   .daterow .dt{flex:1;min-width:150px;max-width:220px;}
-  .daterow .defs{display:flex;gap:8px;flex:2;min-width:240px;}
-  .daterow .defs > div{flex:1;}
+  .tgl{display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer;text-transform:none;font-weight:600;color:var(--text);margin:0 0 10px;}
+  .tgl input{width:auto;}
+  details.defaults{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 12px;margin-bottom:12px;}
+  details.defaults summary{cursor:pointer;font-weight:700;font-size:.85rem;}
+  details.defaults .defs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;}
+  @media(max-width:560px){ details.defaults .defs{grid-template-columns:1fr;} }
+  .defhint{font-size:.74rem;color:var(--muted);margin-top:6px;}
 
   .banner{border-radius:10px;padding:10px 14px;font-size:.88rem;font-weight:600;margin-bottom:12px;}
   .banner.warn{background:var(--warn-bg);border:1px solid var(--warn);color:var(--warn);}
   .banner.info{background:var(--blue-bg);border:1px solid var(--primary);color:var(--primary);}
 
-  .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;}
+  .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;}
   @media(max-width:640px){ .summary{grid-template-columns:1fr 1fr;} }
-  .tile{background:var(--card);border:1px solid var(--border);border-top:4px solid var(--c);border-radius:12px;padding:10px 12px;}
+  .tile{background:var(--card);border:1px solid var(--border);border-top:4px solid var(--c);border-radius:12px;padding:10px 12px;cursor:pointer;text-align:left;color:var(--text);font:inherit;}
+  .tile:hover{border-color:var(--c);}
   .tile .n{font-size:1.6rem;font-weight:800;color:var(--c);line-height:1.1;}
   .tile .l{font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);}
   .tile .names{font-size:.78rem;color:var(--text);margin-top:6px;line-height:1.45;word-break:break-word;}
@@ -54,18 +64,37 @@
   .daytotals{font-size:.85rem;color:var(--muted);margin-bottom:12px;}
   .daytotals b{color:var(--text);}
 
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px;}
+  /* search + filter toolbar */
+  .toolbar{position:sticky;top:0;z-index:4;background:var(--bg);padding:8px 0 6px;margin-bottom:8px;}
+  .tb-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .searchbox{position:relative;flex:1;min-width:200px;}
+  .searchbox input{padding-left:34px;padding-right:34px;}
+  .searchbox .ico{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none;}
+  .searchbox .clr{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:transparent;color:var(--muted);font-size:1.1rem;padding:4px 8px;}
+  .tb-row select{width:auto;}
+  .chips{display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px;-webkit-overflow-scrolling:touch;}
+  .chip{border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:20px;padding:6px 12px;font-size:.78rem;font-weight:700;white-space:nowrap;}
+  .chip span{display:inline-block;min-width:18px;margin-left:4px;padding:0 5px;border-radius:10px;background:var(--input);color:var(--muted);font-size:.7rem;text-align:center;}
+  .chip.on{background:var(--primary);border-color:var(--primary);color:#fff;}
+  .chip.on span{background:rgba(255,255,255,.25);color:#fff;}
+  .resultbar{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.8rem;color:var(--muted);margin:2px 0 10px;flex-wrap:wrap;}
+  .linkbtn{border:none;background:none;color:var(--primary);font-weight:700;font-size:.8rem;padding:2px 4px;}
+
+  /* cards */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;}
   .tc{background:var(--card);border:1px solid var(--border);border-left:5px solid var(--grey);border-radius:12px;padding:12px;}
-  .tc.saved{border-left-color:var(--warn);background:linear-gradient(var(--warn-bg),var(--warn-bg)) , var(--card);background-blend-mode:normal;}
-  .tc.saved{background:var(--card);}
+  .tc.saved{border-left-color:var(--warn);}
   .tc.dirty{border-left-color:var(--primary);}
+  .tc.haserr{border-left-color:var(--danger);}
+  .tc.filtered{display:none;}
   .tc-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;}
   .tc-head b{font-size:1rem;}
   .pill{font-size:.68rem;font-weight:800;padding:3px 9px;border-radius:20px;color:#fff;white-space:nowrap;}
-  .pill.none{background:var(--grey);} .pill.done{background:var(--warn);} .pill.edit{background:var(--primary);}
+  .pill.none{background:var(--grey);} .pill.done{background:var(--warn);} .pill.edit{background:var(--primary);} .pill.bad{background:var(--danger);}
   .tc-note-old{font-size:.76rem;color:var(--warn);font-weight:600;margin-bottom:8px;}
   .att{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;}
-  .att button{padding:8px 2px;border:1px solid var(--border);background:var(--input);color:var(--text);border-radius:8px;font-size:.78rem;font-weight:700;}
+  .att button{padding:11px 2px;border:1px solid var(--border);background:var(--input);color:var(--text);border-radius:8px;font-size:.8rem;font-weight:700;}
+  .att.bad button{border-color:var(--danger);}
   .att button.on[data-a="present"]{background:var(--success);border-color:var(--success);color:#fff;}
   .att button.on[data-a="half_day"]{background:var(--warn);border-color:var(--warn);color:#fff;}
   .att button.on[data-a="absent"]{background:var(--danger);border-color:var(--danger);color:#fff;}
@@ -75,21 +104,39 @@
   .tin{display:flex;gap:5px;} .tin input{min-width:0;}
   .now{border:1px solid var(--border);background:var(--input);color:var(--text);border-radius:8px;padding:0 8px;font-size:.7rem;font-weight:700;}
   .hrs{font-size:.78rem;color:var(--muted);margin:-2px 0 8px;} .hrs:empty{display:none;}
-  .tgl{display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer;text-transform:none;font-weight:600;color:var(--text);margin:0 0 10px;}
-  .tgl input{width:auto;}
+  .grp{border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:8px;}
+  .grp-h{display:flex;justify-content:space-between;align-items:center;font-size:.76rem;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+  .amts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;}
+  .grp .amts{margin-bottom:0;}
+  .mini{border:1px solid var(--border);background:var(--input);color:var(--text);border-radius:8px;padding:6px 10px;font-size:.72rem;font-weight:700;}
+  .mini.full{width:100%;padding:10px 8px;}
+  .calc{font-size:.8rem;margin:2px 0 8px;font-weight:600;color:var(--muted);} .calc .owe{color:var(--warn);} .calc .ok{color:var(--success);} .calc .over{color:var(--danger);}
   .etfrow{margin-bottom:8px;}
   .badge-etf{font-size:.66rem;font-weight:800;padding:3px 8px;border-radius:20px;background:#7c3aed;color:#fff;}
   details.settle{border:1px dashed var(--border);border-radius:10px;padding:8px 10px;margin-bottom:8px;}
   details.settle summary{cursor:pointer;font-weight:700;font-size:.82rem;color:var(--danger);}
   details.settle .hint{font-size:.74rem;color:var(--muted);margin:6px 0 8px;}
-  details.settle .amts{margin-bottom:6px;}
-  .mini{border:1px solid var(--border);background:var(--input);color:var(--text);border-radius:8px;padding:10px 8px;font-size:.74rem;font-weight:700;width:100%;}
-  .amts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
   .tc .save-one{width:100%;margin-top:8px;}
+  .tc input.bad{border-color:var(--danger);background:var(--err-bg);}
+  .tc input.warnf{border-color:var(--warn);background:var(--warn-bg);}
+  .msgs{margin:4px 0 0;}
+  .msgs .m{font-size:.76rem;font-weight:600;line-height:1.35;margin-bottom:3px;}
+  .msgs .m.e{color:var(--danger);} .msgs .m.w{color:var(--warn);}
 
-  .savebar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--border);padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center;gap:12px;align-items:center;z-index:5;}
+  .savebar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--border);padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center;gap:12px;align-items:center;z-index:5;flex-wrap:wrap;}
   .savebar span{font-size:.85rem;color:var(--muted);}
   .empty{padding:30px;text-align:center;color:var(--muted);}
+
+  /* modal + toast */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20;}
+  .modal{background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:520px;width:100%;max-height:85vh;display:flex;flex-direction:column;}
+  .modal h2{margin:0;padding:16px 18px 8px;font-size:1.05rem;}
+  .modal .body{padding:0 18px 12px;overflow-y:auto;font-size:.88rem;line-height:1.5;}
+  .modal .body h3{font-size:.8rem;text-transform:uppercase;color:var(--muted);margin:12px 0 4px;}
+  .modal .body ul{margin:0;padding-left:18px;} .modal .body li{margin-bottom:4px;}
+  .modal .body .e{color:var(--danger);} .modal .body .w{color:var(--warn);}
+  .modal .foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px 16px;border-top:1px solid var(--border);}
+  .toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 18px;border-radius:24px;font-size:.85rem;font-weight:700;z-index:30;box-shadow:0 4px 14px rgba(0,0,0,.3);}
 </style>
 </head>
 <body>
@@ -99,8 +146,10 @@
   <div id="loginBox">
     <h1 style="text-align:center;margin-bottom:14px;">Daily Salary Update</h1>
     <div class="card">
-      <div><label>Admin username</label><input id="lu" autocomplete="username" /></div>
-      <div><label>Password</label><input id="lp" type="password" autocomplete="current-password" /></div>
+      <div><label for="lu">Admin username</label><input id="lu" autocomplete="username" /></div>
+      <div><label for="lp">Password</label>
+        <div class="pwrow"><input id="lp" type="password" autocomplete="current-password" /><button type="button" class="btn btn-ghost" id="pwToggle">Show</button></div>
+      </div>
       <button class="btn" id="loginBtn" style="width:100%;">Sign in</button>
       <div class="err" id="loginErr"></div>
     </div>
@@ -115,23 +164,46 @@
 
     <div class="daterow">
       <button class="btn btn-ghost" id="prevDay" title="Previous day">&larr;</button>
-      <div class="dt"><label>Date</label><input type="date" id="dayInput" /></div>
+      <div class="dt"><label for="dayInput">Date</label><input type="date" id="dayInput" /></div>
       <button class="btn btn-ghost" id="nextDay" title="Next day">&rarr;</button>
       <button class="btn btn-ghost" id="todayBtn">Today</button>
       <div><label class="tgl" title="Show optional in/out time boxes on every card"><input type="checkbox" id="trackTimes" /> ⏱ Track in/out time</label></div>
-      <div class="defs">
-        <div><label>Default daily salary</label><input type="number" id="defSal" min="0" step="0.01" placeholder="0.00" /></div>
-        <div><label>Default transport</label><input type="number" id="defTr" min="0" step="0.01" placeholder="0.00" /></div>
-        <div><label>ETF rate % (members)</label><input type="number" id="defEtf" min="0" step="0.01" placeholder="0" /></div>
-      </div>
     </div>
+
+    <details class="defaults" id="defaultsBox">
+      <summary>⚙ Defaults (auto-fill when you choose Present / Half day)</summary>
+      <div class="defs">
+        <div><label for="defSal">Default daily salary</label><input type="number" id="defSal" min="0" step="0.01" placeholder="0.00" /></div>
+        <div><label for="defTr">Default transport</label><input type="number" id="defTr" min="0" step="0.01" placeholder="0.00" /></div>
+        <div><label for="defEtf">ETF rate % (members)</label><input type="number" id="defEtf" min="0" step="0.01" placeholder="0" /></div>
+      </div>
+      <div class="defhint" id="defHint"></div>
+    </details>
 
     <div id="banner"></div>
 
     <div class="summary" id="summary"></div>
     <div class="daytotals" id="dayTotals"></div>
 
+    <div class="toolbar">
+      <div class="tb-row">
+        <div class="searchbox">
+          <span class="ico">🔍</span>
+          <input type="search" id="searchInput" placeholder="Search technician or note…  (press / to focus)" autocomplete="off" />
+          <button type="button" class="clr hidden" id="searchClr" title="Clear search">&times;</button>
+        </div>
+        <select id="sortSel" title="Sort cards">
+          <option value="name">Sort: Name A–Z</option>
+          <option value="status">Sort: Not updated first</option>
+        </select>
+        <button type="button" class="btn btn-ghost" id="bulkPresent" title="Mark every shown, not-yet-updated technician as Present">✔ Mark shown as Present</button>
+      </div>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="resultbar"><span id="resultCount"></span><button type="button" class="linkbtn hidden" id="resetFilters">Reset search &amp; filters</button></div>
+
     <div class="grid" id="cards"></div>
+    <div class="empty hidden" id="noMatch">No technicians match your search or filter.<br><button type="button" class="linkbtn" id="noMatchReset">Reset search &amp; filters</button></div>
   </div>
 </div>
 
@@ -145,6 +217,7 @@ const EDGE_FUNCTION_URL = "https://acdyletpjdmrqddylgcn.supabase.co/functions/v1
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjZHlsZXRwamRtcnFkZHlsZ2NuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4MDA2NTUsImV4cCI6MjEwNTM3NjY1NX0.2JaoROSxmbbo1Dah-oiBqKULru1Gz8koL0wBlMJbEyI";
 const SESSION_KEY = 'dailySalaryAdmin';
 const ATT = { present:'Present', half_day:'Half day', absent:'Absent', leave:'Leave' };
+const EPS = 0.005;
 
 function gsRun(fn, ...args){
   return fetch(EDGE_FUNCTION_URL, {
@@ -165,6 +238,28 @@ function timesTxt(e){ if(!e || (!e.time_in && !e.time_out)) return ''; const m =
 
 let etfSet = new Set(), bf = {};
 let admin = null, techs = [], existing = {}, currentDay = ymd(new Date()), loadedDay = null;
+const F = { q:'', f:'all', sort:'name' };
+
+/* ---------- toast + modal ---------- */
+let toastTimer = null;
+function toast(msg){
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), 2800);
+}
+function modal({ title, html, ok = 'OK', cancel = 'Cancel', danger = false }){
+  return new Promise(resolve => {
+    const ov = document.createElement('div'); ov.className = 'overlay';
+    ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true"><h2>${esc(title)}</h2><div class="body">${html}</div>
+      <div class="foot">${cancel ? '<button class="btn btn-ghost" data-r="0">' + esc(cancel) + '</button>' : ''}<button class="btn ${danger ? 'btn-danger' : ''}" data-r="1">${esc(ok)}</button></div></div>`;
+    const done = v => { document.removeEventListener('keydown', onKey); ov.remove(); resolve(v); };
+    const onKey = e => { if(e.key === 'Escape') done(false); };
+    ov.addEventListener('click', e => { const b = e.target.closest('[data-r]'); if(b) done(b.dataset.r === '1'); else if(e.target === ov && cancel) done(false); });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(ov);
+    ov.querySelector('[data-r="1"]').focus();
+  });
+}
 
 /* ---------- login ---------- */
 async function doLogin(){
@@ -183,16 +278,26 @@ async function doLogin(){
 }
 $('loginBtn').addEventListener('click', doLogin);
 $('lp').addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
+$('lu').addEventListener('keydown', e => { if(e.key === 'Enter') $('lp').focus(); });
+$('pwToggle').addEventListener('click', () => { const s = $('lp').type === 'password'; $('lp').type = s ? 'text' : 'password'; $('pwToggle').textContent = s ? 'Hide' : 'Show'; });
 $('logoutBtn').addEventListener('click', () => { try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){} location.reload(); });
 try{ const s = sessionStorage.getItem(SESSION_KEY); if(s){ admin = JSON.parse(s); } }catch(e){}
 
 /* ---------- startup ---------- */
+function updateDefHint(){
+  const s = Number($('defSal').value) || 0, t = Number($('defTr').value) || 0;
+  $('defHint').textContent = (s || t) ? 'Present = salary ' + rs(s) + ' + transport ' + rs(t) + ' · Half day = salary ' + rs(s / 2) + ' + transport ' + rs(t)
+    : 'Set a default salary and transport so the amounts fill in automatically.';
+  $('defaultsBox').open = !(s || t) || $('defaultsBox').open;
+}
 async function start(){
   $('loginBox').classList.add('hidden'); $('main').classList.remove('hidden'); $('savebar').classList.remove('hidden');
   $('whoName').textContent = 'Signed in as ' + (admin.name || admin.username || 'admin');
   try{ const d = JSON.parse(localStorage.getItem('dailySalaryDefaults') || '{}'); $('defSal').value = d.sal || ''; $('defTr').value = d.tr || ''; $('defEtf').value = d.etf || ''; }catch(e){}
+  updateDefHint();
   ['defSal','defTr','defEtf'].forEach(id => $(id).addEventListener('change', () => {
     try{ localStorage.setItem('dailySalaryDefaults', JSON.stringify({ sal:$('defSal').value, tr:$('defTr').value, etf:$('defEtf').value })); }catch(e){}
+    updateDefHint();
   }));
   try{ $('trackTimes').checked = localStorage.getItem('dailySalaryTrackTimes') === '1'; }catch(e){}
   $('cards').classList.toggle('show-times', $('trackTimes').checked);
@@ -200,11 +305,12 @@ async function start(){
     $('cards').classList.toggle('show-times', $('trackTimes').checked);
     try{ localStorage.setItem('dailySalaryTrackTimes', $('trackTimes').checked ? '1' : '0'); }catch(e){}
   });
+  try{ F.sort = localStorage.getItem('dailySalarySort') || 'name'; $('sortSel').value = F.sort; }catch(e){}
   $('cards').innerHTML = '<div class="empty">Loading…</div>';
   try{
     const all = await gsRun('listTechnicians');
     techs = all.filter(t => t.active && t.role !== 'admin').sort((a,b) => a.name.localeCompare(b.name));
-  }catch(e){ $('cards').innerHTML = '<div class="empty">Could not load technicians: ' + esc(e.message) + '</div>'; return; }
+  }catch(e){ $('cards').innerHTML = '<div class="empty">Could not load technicians: ' + esc(e.message) + '<br><button class="btn" onclick="location.reload()" style="margin-top:10px;">Retry</button></div>'; return; }
   $('dayInput').value = currentDay;
   loadDay();
 }
@@ -214,7 +320,10 @@ if(admin) start();
 function dirtyCards(){ return Array.from(document.querySelectorAll('.tc.dirty')); }
 
 async function goToDay(d){
-  if(dirtyCards().length && !confirm('You have unsaved changes for ' + currentDay + '. Discard them and change the date?')){ $('dayInput').value = currentDay; return; }
+  if(dirtyCards().length){
+    const ok = await modal({ title:'Discard unsaved changes?', html:'You have unsaved changes for <b>' + esc(currentDay) + '</b>. Changing the date will discard them.', ok:'Discard & change date', danger:true });
+    if(!ok){ $('dayInput').value = currentDay; return; }
+  }
   currentDay = d; $('dayInput').value = d; loadDay();
 }
 $('dayInput').addEventListener('change', e => { if(e.target.value) goToDay(e.target.value); else e.target.value = currentDay; });
@@ -234,8 +343,8 @@ async function loadDay(){
     bf = {}; bal.forEach(b => { bf[b.id] = { salary: Number(b.salary_arrears), transport: Number(b.transport_arrears) }; });
     existing = {}; list.forEach(e => { existing[e.technician_id] = e; });
     loadedDay = currentDay;
-    renderCards(); renderSummary(); updateDirty();
-  }catch(e){ $('cards').innerHTML = '<div class="empty">Could not load: ' + esc(e.message) + '</div>'; }
+    renderCards(); renderSummary(); updateDirty(); applyFilter();
+  }catch(e){ $('cards').innerHTML = '<div class="empty">Could not load: ' + esc(e.message) + '<br><button class="btn" id="retryLoad" style="margin-top:10px;">Try again</button></div>'; const r = $('retryLoad'); if(r) r.addEventListener('click', loadDay); }
 }
 
 /* ---------- summary: working / absent / leave / not updated ---------- */
@@ -257,16 +366,17 @@ function renderSummary(){
     else groups.leave.push(esc(t.name));
   });
   const bfAll = techs.reduce((a, t) => a + ((bf[t.id] || {}).salary || 0) + ((bf[t.id] || {}).transport || 0), 0);
-  const tile = (label, arr, c) => `<div class="tile" style="--c:${c}"><div class="l">${label}</div><div class="n">${arr.length}</div><div class="names">${arr.join(', ') || '<i>—</i>'}</div></div>`;
-  $('summary').innerHTML = tile('Working', groups.work, 'var(--success)') + tile('Absent', groups.absent, 'var(--danger)') +
-                           tile('On leave', groups.leave, 'var(--grey)') + tile('Not updated yet', groups.none, 'var(--warn)');
+  const tile = (label, arr, c, f) => `<button type="button" class="tile" data-f="${f}" style="--c:${c}" title="Click to filter the list"><div class="l">${label}</div><div class="n">${arr.length}</div><div class="names">${arr.join(', ') || '<i>—</i>'}</div></button>`;
+  $('summary').innerHTML = tile('Working', groups.work, 'var(--success)', 'work') + tile('Absent', groups.absent, 'var(--danger)', 'absent') +
+                           tile('On leave', groups.leave, 'var(--grey)', 'leave') + tile('Not updated yet', groups.none, 'var(--warn)', 'none');
   $('dayTotals').innerHTML = `${niceDate(currentDay)} — Earned: salary <b>${rs(sDue)}</b>, transport <b>${rs(tDue)}</b> · Paid: salary <b>${rs(sPaid)}</b>, transport <b>${rs(tPaid)}</b>` + (hrsTotal ? ` · Hours logged: <b>${hoursTxt(hrsTotal)}</b>` : '')
     + (etfT ? ` · ETF deducted: <b>${rs(etfT)}</b>` : '') + (setT ? ` · Arrears settled: <b>${rs(setT)}</b>` : '')
-    + (bfAll > 0.005 ? ` · Arrears brought forward (all): <b>${rs(bfAll)}</b>` : '');
+    + (bfAll > EPS ? ` · Arrears brought forward (all): <b>${rs(bfAll)}</b>` : '');
   $('banner').innerHTML = updated
     ? `<div class="banner warn">⚠ ${updated} of ${techs.length} technician${techs.length === 1 ? '' : 's'} already ha${updated === 1 ? 's' : 've'} salary details saved for this date (amber cards). Saving them again will replace the earlier entry.</div>`
     : (techs.length ? '<div class="banner info">No salary details saved for this date yet.</div>' : '');
 }
+$('summary').addEventListener('click', e => { const t = e.target.closest('.tile'); if(t){ F.f = F.f === t.dataset.f ? 'all' : t.dataset.f; applyFilter(); $('cards').scrollIntoView({ behavior:'smooth', block:'start' }); } });
 
 /* ---------- cards ---------- */
 function cardHtml(t){
@@ -275,54 +385,73 @@ function cardHtml(t){
   const att = e ? e.attendance : '';
   const attBtns = Object.keys(ATT).map(a => `<button type="button" data-a="${a}" class="${att === a ? 'on' : ''}">${ATT[a]}</button>`).join('');
   const old = e ? `<div class="tc-note-old">Already updated: ${ATT[e.attendance]} · salary ${rs(e.salary_paid)} paid of ${rs(e.salary_due)} · transport ${rs(e.transport_paid)} paid of ${rs(e.transport_due)}${timesTxt(e) ? ' · ' + timesTxt(e) : ''}${Number(e.etf_deduction) ? ' · ETF ' + rs(e.etf_deduction) : ''}${(Number(e.arrears_salary_paid) || Number(e.arrears_transport_paid)) ? ' · arrears settled ' + rs(Number(e.arrears_salary_paid) + Number(e.arrears_transport_paid)) : ''}</div>` : '';
-  const num = (f, label, val) => `<div><label>${label}</label><input type="number" min="0" step="0.01" data-f="${f}" value="${val === '' ? '' : Number(val)}" placeholder="0.00" /></div>`;
+  const num = (f, label, val) => `<div><label>${label}</label><input type="number" inputmode="decimal" min="0" step="0.01" data-f="${f}" value="${val === '' || val == null ? '' : Number(val)}" placeholder="0.00" /></div>`;
   const hasTimes = !!(e && (e.time_in || e.time_out));
   const isMember = etfSet.has(t.id) || !!(e && Number(e.etf_deduction) > 0);
   const etfHtml = isMember ? `<div class="etfrow">${num('etf', 'ETF deduction (permanent member)', e ? e.etf_deduction : '')}</div>` : '';
   const b = bf[t.id] || { salary: 0, transport: 0 }, outAll = b.salary + b.transport;
   const hasSettle = !!(e && (Number(e.arrears_salary_paid) || Number(e.arrears_transport_paid)));
-  const settleHtml = (outAll > 0.005 || hasSettle) ? `<details class="settle" ${hasSettle ? 'open' : ''}>
+  const settleHtml = (outAll > EPS || hasSettle) ? `<details class="settle" ${hasSettle ? 'open' : ''}>
       <summary>💳 Arrears settlement — outstanding ${rs(Math.max(outAll, 0))}</summary>
       <div class="hint">Before this day: salary ${rs(b.salary)} · transport ${rs(b.transport)}</div>
       <div class="amts">${num('asal', 'Salary arrears paid', e ? e.arrears_salary_paid : '')}${num('atr', 'Transport arrears paid', e ? e.arrears_transport_paid : '')}</div>
       <div class="amts"><div><label>Arrears day (optional)</label><input type="date" data-f="aday" value="${e && e.arrears_day ? e.arrears_day : ''}" /></div>
-        <div style="display:flex;align-items:flex-end;"><button type="button" class="mini" data-settleall="1">Settle all outstanding</button></div></div>
+        <div style="display:flex;align-items:flex-end;"><button type="button" class="mini full" data-settleall="1">Settle all outstanding</button></div></div>
     </details>` : '';
   const timeBox = (f, label, val) => `<div><label>${label}</label><div class="tin"><input type="time" data-f="${f}" value="${val || ''}" /><button type="button" class="now" data-now="${f}" title="Set to the current time">Now</button></div></div>`;
-  return `<div class="tc ${e ? 'saved' : ''} ${hasTimes ? 'has-times' : ''}" data-id="${t.id}" data-att="${att}" ${e && Number(e.etf_deduction) > 0 ? 'data-etf-manual="1"' : ''}>
+  return `<div class="tc ${e ? 'saved' : ''} ${hasTimes ? 'has-times' : ''}" data-id="${t.id}" data-att="${att}" data-arrears="${outAll > EPS ? '1' : '0'}" data-etf="${isMember ? '1' : '0'}" ${e && Number(e.etf_deduction) > 0 ? 'data-etf-manual="1"' : ''}>
     <div class="tc-head"><b>${esc(t.name)}</b><span style="display:flex;gap:6px;align-items:center;">${isMember ? '<span class="badge-etf" title="Permanent member — ETF deducted">ETF</span>' : ''}<span class="pill ${e ? 'done' : 'none'}">${e ? 'Updated' : 'Not updated'}</span></span></div>
     ${old}
     <div class="att">${attBtns}</div>
     <div class="timerow">${timeBox('timeIn', 'In time (optional)', e && e.time_in)}${timeBox('timeOut', 'Out time (optional)', e && e.time_out)}</div>
     <div class="hrs">${e && hoursMin(e.time_in, e.time_out) != null ? 'Worked ' + hoursTxt(hoursMin(e.time_in, e.time_out)) : ''}</div>
-    <div class="amts">${num('salDue','Salary earned',v('salary_due'))}${num('salPaid','Salary paid',v('salary_paid'))}${num('trDue','Transport earned',v('transport_due'))}${num('trPaid','Transport paid',v('transport_paid'))}</div>
+    <div class="grp"><div class="grp-h"><span>Salary</span><button type="button" class="mini" data-payfull="sal">Paid in full</button></div>
+      <div class="amts">${num('salDue','Earned',v('salary_due'))}${num('salPaid','Paid',v('salary_paid'))}</div></div>
+    <div class="grp"><div class="grp-h"><span>Transport</span><button type="button" class="mini" data-payfull="tr">Paid in full</button></div>
+      <div class="amts">${num('trDue','Earned',v('transport_due'))}${num('trPaid','Paid',v('transport_paid'))}</div></div>
+    <div class="calc"></div>
     ${etfHtml}
     ${settleHtml}
     <input data-f="note" placeholder="Note (optional)" value="${esc(e ? e.note || '' : '')}" />
+    <div class="msgs"></div>
     <button class="btn save-one" type="button">${e ? 'Update entry' : 'Save entry'}</button>
   </div>`;
 }
 function renderCards(){
   $('cards').innerHTML = techs.length ? techs.map(cardHtml).join('') : '<div class="empty">No active technicians found.</div>';
+  document.querySelectorAll('.tc').forEach(updateCalc);
 }
 function replaceCard(id){
   const t = techs.find(x => x.id === id), old = document.querySelector(`.tc[data-id="${id}"]`);
-  const tmp = document.createElement('div'); tmp.innerHTML = cardHtml(t); old.replaceWith(tmp.firstElementChild);
+  const tmp = document.createElement('div'); tmp.innerHTML = cardHtml(t); const nc = tmp.firstElementChild; old.replaceWith(nc); updateCalc(nc);
 }
 function markDirty(card){
   card.classList.add('dirty');
   const pill = card.querySelector('.pill'); pill.className = 'pill edit'; pill.textContent = 'Unsaved';
+  showInline(card);
   updateDirty();
 }
 function updateDirty(){
   const n = dirtyCards().length;
   $('dirtyCount').textContent = n ? n + ' unsaved change' + (n === 1 ? '' : 's') : 'No unsaved changes';
   $('saveAllBtn').disabled = !n;
+  renderChips();
 }
 
 function updateHrs(card){
   const m = hoursMin(card.querySelector('[data-f="timeIn"]').value, card.querySelector('[data-f="timeOut"]').value);
   card.querySelector('.hrs').textContent = m != null ? 'Worked ' + hoursTxt(m) + (card.querySelector('[data-f="timeOut"]').value < card.querySelector('[data-f="timeIn"]').value ? ' (overnight)' : '') : '';
+}
+function updateCalc(card){
+  const r = readCard(card), el = card.querySelector('.calc'); if(!el) return;
+  const one = (label, due, paid) => {
+    const d = +(due - paid).toFixed(2);
+    if(!due && !paid) return '';
+    if(d > EPS) return `${label}: <span class="owe">${rs(d)} unpaid</span>`;
+    if(d < -EPS) return `${label}: <span class="over">${rs(-d)} overpaid</span>`;
+    return `${label}: <span class="ok">fully paid ✓</span>`;
+  };
+  el.innerHTML = [one('Salary', r.salDue, r.salPaid), one('Transport', r.trDue, r.trPaid)].filter(Boolean).join(' · ');
 }
 function autoEtf(card, respectManual){
   const f = card.querySelector('[data-f="etf"]'), rate = Number($('defEtf').value) || 0;
@@ -330,12 +459,58 @@ function autoEtf(card, respectManual){
   if(respectManual && card.dataset.etfManual === '1') return;
   f.value = +((Number(card.querySelector('[data-f="salDue"]').value) || 0) * rate / 100).toFixed(2);
 }
+
+/* ---------- validation ---------- */
+function readCard(card){
+  const n = f => { const el = card.querySelector(`[data-f="${f}"]`); return !el || el.value === '' ? 0 : Number(el.value); };
+  return { id: card.dataset.id, att: card.dataset.att, salDue: n('salDue'), salPaid: n('salPaid'), trDue: n('trDue'), trPaid: n('trPaid'),
+           note: card.querySelector('[data-f="note"]').value.trim() || null,
+           timeIn: card.querySelector('[data-f="timeIn"]').value || null, timeOut: card.querySelector('[data-f="timeOut"]').value || null,
+           etf: n('etf'), asal: n('asal'), atr: n('atr'), aday: (card.querySelector('[data-f="aday"]') || {}).value || null };
+}
+const FIELD_LABEL = { salDue:'Salary earned', salPaid:'Salary paid', trDue:'Transport earned', trPaid:'Transport paid', etf:'ETF deduction', asal:'Salary arrears paid', atr:'Transport arrears paid' };
+function validateRow(r){
+  const errs = [], warns = [];   // each: { f, msg }
+  if(!r.att) errs.push({ f:'att', msg:'Choose Present, Half day, Absent or Leave.' });
+  Object.keys(FIELD_LABEL).forEach(f => { if(isNaN(r[f]) || r[f] < 0) errs.push({ f, msg: FIELD_LABEL[f] + ' must be zero or more.' }); });
+  if(errs.length) return { errs, warns };
+  const b = bf[r.id] || { salary:0, transport:0 };
+  if(r.att === 'present' && r.salDue === 0) warns.push({ f:'salDue', msg:'Marked Present but salary earned is 0.' });
+  if((r.att === 'absent' || r.att === 'leave') && (r.salDue > 0 || r.trDue > 0)) warns.push({ f: r.salDue > 0 ? 'salDue' : 'trDue', msg:'Marked ' + ATT[r.att] + ' but an amount is earned.' });
+  if(r.salPaid > r.salDue + EPS) warns.push({ f:'salPaid', msg:'Salary paid is ' + rs(r.salPaid - r.salDue) + ' more than earned.' });
+  if(r.trPaid > r.trDue + EPS) warns.push({ f:'trPaid', msg:'Transport paid is ' + rs(r.trPaid - r.trDue) + ' more than earned.' });
+  if(r.etf > r.salDue + EPS) warns.push({ f:'etf', msg:'ETF deduction is more than the salary earned.' });
+  if((r.timeIn && !r.timeOut) || (!r.timeIn && r.timeOut)) warns.push({ f: r.timeIn ? 'timeOut' : 'timeIn', msg:'Only one of In / Out time is filled.' });
+  if(r.timeIn && r.timeOut && r.timeOut < r.timeIn) warns.push({ f:'timeOut', msg:'Out time (' + r.timeOut + ') is earlier than In time (' + r.timeIn + ') — counted as overnight.' });
+  if(r.asal > b.salary + (r.salDue - r.salPaid) + EPS) warns.push({ f:'asal', msg:'Salary arrears paid is more than outstanding.' });
+  if(r.atr > b.transport + (r.trDue - r.trPaid) + EPS) warns.push({ f:'atr', msg:'Transport arrears paid is more than outstanding.' });
+  if(r.aday && !(r.asal > 0 || r.atr > 0)) warns.push({ f:'aday', msg:'Arrears day is set but no arrears amount is paid.' });
+  if(r.aday && r.aday > currentDay) warns.push({ f:'aday', msg:'Arrears day is after this date.' });
+  return { errs, warns };
+}
+function showInline(card){
+  card.querySelectorAll('input.bad, input.warnf').forEach(i => i.classList.remove('bad', 'warnf'));
+  card.querySelector('.att').classList.remove('bad');
+  const msgs = card.querySelector('.msgs');
+  if(!card.classList.contains('dirty')){ msgs.innerHTML = ''; card.classList.remove('haserr'); return; }
+  const v = validateRow(readCard(card));
+  const mark = (list, cls) => list.forEach(x => {
+    if(x.f === 'att'){ if(cls === 'bad') card.querySelector('.att').classList.add('bad'); return; }
+    const el = card.querySelector(`[data-f="${x.f}"]`); if(el && !el.classList.contains('bad')) el.classList.add(cls);
+  });
+  mark(v.warns, 'warnf'); mark(v.errs, 'bad');
+  msgs.innerHTML = v.errs.map(x => `<div class="m e">✖ ${esc(x.msg)}</div>`).join('') + v.warns.map(x => `<div class="m w">⚠ ${esc(x.msg)}</div>`).join('');
+  card.classList.toggle('haserr', v.errs.length > 0);
+  const pill = card.querySelector('.pill');
+  if(v.errs.length){ pill.className = 'pill bad'; pill.textContent = 'Fix errors'; } else { pill.className = 'pill edit'; pill.textContent = 'Unsaved'; }
+}
+
 $('cards').addEventListener('input', e => {
   const c = e.target.closest('.tc'); if(!c) return;
   delete c.dataset.autoSal;
   if(e.target.dataset.f === 'etf') c.dataset.etfManual = '1';
   if(e.target.dataset.f === 'salDue') autoEtf(c, true);
-  markDirty(c); updateHrs(c);
+  updateHrs(c); updateCalc(c); markDirty(c);
 });
 $('cards').addEventListener('click', e => {
   const card = e.target.closest('.tc'); if(!card) return;
@@ -346,8 +521,14 @@ $('cards').addEventListener('click', e => {
     card.querySelector('[data-f="atr"]').value = Math.max(0, +b.transport.toFixed(2));
     markDirty(card); return;
   }
+  const pf = e.target.closest('[data-payfull]');
+  if(pf){
+    const k = pf.dataset.payfull;
+    card.querySelector(`[data-f="${k}Paid"]`).value = card.querySelector(`[data-f="${k}Due"]`).value || 0;
+    updateCalc(card); markDirty(card); return;
+  }
   const nb = e.target.closest('.now');
-  if(nb){ const d = new Date(), p = n => String(n).padStart(2, '0'); card.querySelector(`[data-f="${nb.dataset.now}"]`).value = p(d.getHours()) + ':' + p(d.getMinutes()); markDirty(card); updateHrs(card); return; }
+  if(nb){ const d = new Date(), p = n => String(n).padStart(2, '0'); card.querySelector(`[data-f="${nb.dataset.now}"]`).value = p(d.getHours()) + ':' + p(d.getMinutes()); updateHrs(card); markDirty(card); return; }
   const ab = e.target.closest('.att button');
   if(ab){ setAttendance(card, ab.dataset.a); return; }
   if(e.target.closest('.save-one')) saveCards([card]);
@@ -369,54 +550,126 @@ function setAttendance(card, a){
     if(dT && free(tr, 'autoTr')){ tr.value = dT; card.dataset.autoTr = String(dT); }
     autoEtf(card, true);
   }
-  markDirty(card);
+  updateCalc(card); markDirty(card);
 }
 
-/* ---------- saving (with same-day warning) ---------- */
-function readCard(card){
-  const n = f => { const el = card.querySelector(`[data-f="${f}"]`); return !el || el.value === '' ? 0 : Number(el.value); };
-  return { id: card.dataset.id, att: card.dataset.att, salDue: n('salDue'), salPaid: n('salPaid'), trDue: n('trDue'), trPaid: n('trPaid'),
-           note: card.querySelector('[data-f="note"]').value.trim() || null,
-           timeIn: card.querySelector('[data-f="timeIn"]').value || null, timeOut: card.querySelector('[data-f="timeOut"]').value || null,
-           etf: n('etf'), asal: n('asal'), atr: n('atr'), aday: (card.querySelector('[data-f="aday"]') || {}).value || null };
+/* ---------- search + filter + sort ---------- */
+const CHIPS = [ ['all','All'], ['none','Not updated'], ['updated','Updated'], ['work','Working'], ['absent','Absent'], ['leave','On leave'], ['unsaved','Unsaved'], ['etf','ETF members'], ['arrears','Has arrears'] ];
+function cardInfo(card){
+  const e = existing[card.dataset.id];
+  return { updated:!!e, att:card.dataset.att, dirty:card.classList.contains('dirty'), etf:card.dataset.etf === '1', arrears:card.dataset.arrears === '1' };
 }
+function chipMatch(f, i){
+  switch(f){
+    case 'all': return true;
+    case 'none': return !i.updated;
+    case 'updated': return i.updated;
+    case 'work': return i.att === 'present' || i.att === 'half_day';
+    case 'absent': return i.att === 'absent';
+    case 'leave': return i.att === 'leave';
+    case 'unsaved': return i.dirty;
+    case 'etf': return i.etf;
+    case 'arrears': return i.arrears;
+  }
+  return true;
+}
+function renderChips(){
+  const cards = Array.from(document.querySelectorAll('.tc')), infos = cards.map(cardInfo);
+  $('chips').innerHTML = CHIPS.map(([f, l]) => `<button type="button" class="chip ${F.f === f ? 'on' : ''}" data-f="${f}">${l}<span>${infos.filter(i => chipMatch(f, i)).length}</span></button>`).join('');
+}
+function applyFilter(){
+  const q = F.q.trim().toLowerCase();
+  const cards = Array.from(document.querySelectorAll('.tc'));
+  let shown = 0;
+  cards.forEach((card, idx) => {
+    const t = techs.find(x => x.id === card.dataset.id), i = cardInfo(card);
+    const note = (card.querySelector('[data-f="note"]').value || '').toLowerCase();
+    const ok = (!q || t.name.toLowerCase().includes(q) || note.includes(q)) && chipMatch(F.f, i);
+    card.classList.toggle('filtered', !ok);
+    if(ok) shown++;
+    card.style.order = F.sort === 'status' ? (i.updated ? 1000 : 0) + idx : idx;
+  });
+  renderChips();
+  const filtering = !!q || F.f !== 'all';
+  $('searchClr').classList.toggle('hidden', !F.q);
+  $('resetFilters').classList.toggle('hidden', !filtering);
+  $('resultCount').textContent = cards.length ? 'Showing ' + shown + ' of ' + cards.length + ' technician' + (cards.length === 1 ? '' : 's') : '';
+  $('noMatch').classList.toggle('hidden', !(cards.length && !shown));
+}
+function resetFilters(){ F.q = ''; F.f = 'all'; $('searchInput').value = ''; applyFilter(); }
+$('searchInput').addEventListener('input', e => { F.q = e.target.value; applyFilter(); });
+$('searchInput').addEventListener('keydown', e => { if(e.key === 'Escape'){ resetFilters(); e.target.blur(); } });
+$('searchClr').addEventListener('click', () => { F.q = ''; $('searchInput').value = ''; applyFilter(); $('searchInput').focus(); });
+$('chips').addEventListener('click', e => { const c = e.target.closest('.chip'); if(c){ F.f = c.dataset.f; applyFilter(); } });
+$('sortSel').addEventListener('change', e => { F.sort = e.target.value; try{ localStorage.setItem('dailySalarySort', F.sort); }catch(err){} applyFilter(); });
+$('resetFilters').addEventListener('click', resetFilters);
+$('noMatchReset').addEventListener('click', resetFilters);
+document.addEventListener('keydown', e => {
+  if(e.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) && !$('main').classList.contains('hidden')){ e.preventDefault(); $('searchInput').focus(); }
+});
+$('bulkPresent').addEventListener('click', async () => {
+  const targets = Array.from(document.querySelectorAll('.tc')).filter(c => !c.classList.contains('filtered') && !existing[c.dataset.id] && !c.dataset.att);
+  if(!targets.length){ toast('Nothing to mark — every shown technician already has a status.'); return; }
+  if(!(Number($('defSal').value) > 0)){
+    const ok = await modal({ title:'No default salary set', html:'Default daily salary is 0, so amounts will stay empty. Mark ' + targets.length + ' technician' + (targets.length === 1 ? '' : 's') + ' as Present anyway?', ok:'Mark as Present' });
+    if(!ok) return;
+  }
+  targets.forEach(c => setAttendance(c, 'present'));
+  toast(targets.length + ' marked Present — review, then save.');
+});
+
+/* ---------- saving (with validation + same-day warning) ---------- */
 function describe(e){
   return `${ATT[e.attendance]}, salary ${rs(e.salary_paid)} paid / ${rs(e.salary_due)} earned, transport ${rs(e.transport_paid)} paid / ${rs(e.transport_due)} earned` + (timesTxt(e) ? ', ' + timesTxt(e) : '') + (Number(e.etf_deduction) ? ', ETF ' + rs(e.etf_deduction) : '') + ((Number(e.arrears_salary_paid) || Number(e.arrears_transport_paid)) ? ', arrears settled ' + rs(Number(e.arrears_salary_paid) + Number(e.arrears_transport_paid)) : '');
 }
+const nameOf = id => techs.find(t => t.id === id).name;
 async function saveCards(cards){
-  const rows = cards.map(readCard);
-  for(const r of rows){
-    const name = techs.find(t => t.id === r.id).name;
-    if(!r.att){ alert(name + ': choose Present, Half day, Absent or Leave first.'); return; }
-    if([r.salDue, r.salPaid, r.trDue, r.trPaid, r.etf, r.asal, r.atr].some(x => isNaN(x) || x < 0)){ alert(name + ': amounts must be zero or more.'); return; }
-    if(r.timeIn && r.timeOut && r.timeOut < r.timeIn && !confirm(name + ': Out time (' + r.timeOut + ') is earlier than In time (' + r.timeIn + '). Count this as an overnight shift?')) return;
-  }
-  // WARNING: settlement larger than what is outstanding
-  const over = rows.filter(r => { const b = bf[r.id] || { salary: 0, transport: 0 };
-    return r.asal > b.salary + (r.salDue - r.salPaid) + 0.005 || r.atr > b.transport + (r.trDue - r.trPaid) + 0.005; });
-  if(over.length && !confirm('⚠ The arrears settlement is MORE than the outstanding arrears for:\n\n' + over.map(r => '• ' + techs.find(t => t.id === r.id).name).join('\n') + '\n\nSave anyway?')) return;
-  // WARNING: same technician + same day already saved
-  const dupes = rows.filter(r => existing[r.id]);
-  if(dupes.length){
-    const lines = dupes.map(r => '• ' + techs.find(t => t.id === r.id).name + ' — currently: ' + describe(existing[r.id])).join('\n');
-    if(!confirm('⚠ Salary details for ' + currentDay + ' were already updated for:\n\n' + lines + '\n\nSaving will REPLACE the earlier entry. Continue?')) return;
-  }
-  if(currentDay > ymd(new Date()) && !confirm('⚠ ' + currentDay + ' is in the future. Save anyway?')) return;
+  if(!cards.length) return;
+  const rows = cards.map(readCard), results = rows.map(validateRow);
 
+  // 1) blocking errors
+  const bad = [];
+  cards.forEach((c, i) => { showInline(c); if(results[i].errs.length) bad.push(i); });
+  if(bad.length){
+    bad.forEach(i => cards[i].classList.remove('filtered'));
+    cards[bad[0]].scrollIntoView({ behavior:'smooth', block:'center' });
+    await modal({ title:'Please fix these first', ok:'OK', cancel:null,
+      html: bad.map(i => `<h3>${esc(nameOf(rows[i].id))}</h3><ul>${results[i].errs.map(x => `<li class="e">${esc(x.msg)}</li>`).join('')}</ul>`).join('') });
+    return;
+  }
+
+  // 2) warnings, replacements and future date -> one combined confirmation
+  let html = '';
+  const warnIdx = results.map((r, i) => r.warns.length ? i : -1).filter(i => i >= 0);
+  if(warnIdx.length) html += '<h3>Check these amounts</h3>' + warnIdx.map(i => `<b>${esc(nameOf(rows[i].id))}</b><ul>${results[i].warns.map(x => `<li class="w">${esc(x.msg)}</li>`).join('')}</ul>`).join('');
+  const dupes = rows.filter(r => existing[r.id]);
+  if(dupes.length) html += '<h3>Will replace earlier entry for ' + esc(currentDay) + '</h3><ul>' + dupes.map(r => `<li><b>${esc(nameOf(r.id))}</b> — currently: ${esc(describe(existing[r.id]))}</li>`).join('') + '</ul>';
+  if(currentDay > ymd(new Date())) html += `<h3>Future date</h3><ul><li class="w">${esc(currentDay)} is in the future.</li></ul>`;
+  if(html){
+    const ok = await modal({ title:'Review before saving (' + rows.length + ' ' + (rows.length === 1 ? 'entry' : 'entries') + ')', html, ok:'Save anyway' });
+    if(!ok){ const first = warnIdx.length ? cards[warnIdx[0]] : cards[0]; first.classList.remove('filtered'); first.scrollIntoView({ behavior:'smooth', block:'center' }); return; }
+  }
+
+  // 3) save
   const btns = document.querySelectorAll('.save-one, #saveAllBtn'); btns.forEach(b => b.disabled = true);
-  const failed = [];
+  const failed = []; let saved = 0;
   for(const r of rows){
     try{
       await gsRun('upsertSalaryEntry', r.id, currentDay, r.att, r.salDue, r.trDue, r.salPaid, r.trPaid, r.note, admin.id, r.timeIn, r.timeOut, r.etf, r.asal, r.atr, r.aday);
       existing[r.id] = { technician_id:r.id, entry_date:currentDay, attendance:r.att, salary_due:r.salDue, transport_due:r.trDue,
                          salary_paid:r.salPaid, transport_paid:r.trPaid, note:r.note, time_in:r.timeIn, time_out:r.timeOut,
                          etf_deduction:r.etf, arrears_salary_paid:r.asal, arrears_transport_paid:r.atr, arrears_day:r.aday };
-      replaceCard(r.id);
-    }catch(e){ failed.push(techs.find(t => t.id === r.id).name + ': ' + e.message); }
+      replaceCard(r.id); saved++;
+    }catch(e){
+      failed.push(nameOf(r.id) + ': ' + e.message);
+      const c = document.querySelector(`.tc[data-id="${r.id}"]`);
+      if(c){ const m = c.querySelector('.msgs'); m.innerHTML = `<div class="m e">✖ Not saved: ${esc(e.message)}</div>` + m.innerHTML; c.classList.add('haserr'); }
+    }
   }
   btns.forEach(b => b.disabled = false);
-  renderSummary(); updateDirty();
-  if(failed.length) alert('Some entries could not be saved:\n' + failed.join('\n'));
+  renderSummary(); updateDirty(); applyFilter();
+  if(saved) toast('✔ Saved ' + saved + ' ' + (saved === 1 ? 'entry' : 'entries'));
+  if(failed.length) await modal({ title:'Some entries could not be saved', ok:'OK', cancel:null, html:'<ul>' + failed.map(f => `<li class="e">${esc(f)}</li>`).join('') + '</ul><p>These cards are still open with your changes — fix the problem and save again.</p>' });
 }
 $('saveAllBtn').addEventListener('click', () => saveCards(dirtyCards()));
 window.addEventListener('beforeunload', e => { if(dirtyCards().length){ e.preventDefault(); e.returnValue = ''; } });
