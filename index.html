@@ -34,7 +34,7 @@
   .topbar .who{font-size:.8rem;color:var(--muted);display:flex;gap:10px;align-items:center;}
 
   /* arrears news ticker */
-  .ticker{display:flex;align-items:stretch;background:var(--card);border:1px solid var(--border);border-left:5px solid var(--danger);border-radius:10px;overflow:hidden;margin-bottom:12px;cursor:pointer;}
+  .ticker{position:sticky;top:0;z-index:8;box-shadow:0 3px 10px rgba(0,0,0,.18);display:flex;align-items:stretch;background:var(--card);border:1px solid var(--border);border-left:5px solid var(--danger);border-radius:10px;overflow:hidden;margin-bottom:12px;cursor:pointer;}
   .ticker.clear{border-left-color:var(--success);cursor:default;}
   .ticker .tk-label{flex:none;display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--danger);color:#fff;font-size:.72rem;font-weight:800;text-transform:uppercase;white-space:nowrap;}
   .ticker.clear .tk-label{background:var(--success);}
@@ -46,6 +46,7 @@
   .ticker .tk-item .amt{color:var(--danger);font-weight:800;}
   .ticker .tk-item .sub{color:var(--muted);font-size:.78rem;}
   .ticker .tk-item.total .amt{color:var(--warn);}
+  .ticker .offtag{display:inline-block;background:var(--grey);color:#fff;font-size:.66rem;font-weight:800;padding:2px 8px;border-radius:20px;vertical-align:1px;}
   .ticker .tk-item.ok{color:var(--success);font-weight:700;}
   .ticker .tk-sep{color:var(--muted);padding-right:22px;align-self:center;}
   @keyframes tkscroll{ from{transform:translateX(0);} to{transform:translateX(-100%);} }
@@ -54,7 +55,7 @@
   /* side panel: not yet paid */
   .layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:14px;align-items:start;}
   .maincol{min-width:0;}
-  .side{position:sticky;top:12px;max-height:calc(100vh - 110px);overflow-y:auto;padding:12px;border-top:4px solid var(--warn);}
+  .side{position:sticky;top:calc(var(--tkh,0px) + 12px);max-height:calc(100vh - 140px);overflow-y:auto;padding:12px;border-top:4px solid var(--warn);}
   .side h2{font-size:.82rem;text-transform:uppercase;margin:0 0 2px;color:var(--text);}
   .side .sd{font-size:.74rem;color:var(--muted);margin-bottom:8px;}
   .side .tot{font-size:.8rem;font-weight:700;background:var(--warn-bg);border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:6px 8px;margin-bottom:8px;}
@@ -63,6 +64,8 @@
   .side .up b{display:block;font-size:.88rem;}
   .side .up span{display:block;font-size:.75rem;color:var(--muted);}
   .side .up span em{font-style:normal;color:var(--warn);font-weight:800;}
+  .side .offtot{background:var(--input);border-color:var(--border);color:var(--muted);}
+  .side .offtag{display:inline-block;background:var(--grey);color:#fff;font-size:.62rem;font-weight:800;padding:2px 7px;border-radius:20px;margin-left:4px;vertical-align:1px;}
   .side .allpaid{font-size:.85rem;font-weight:700;color:var(--success);padding:6px 0;}
   .side .note{font-size:.72rem;color:var(--muted);margin-top:6px;}
   .tc.flash{outline:3px solid var(--warn);outline-offset:2px;}
@@ -100,7 +103,7 @@
   .daytotals b{color:var(--text);}
 
   /* search + filter toolbar */
-  .toolbar{position:sticky;top:0;z-index:4;background:var(--bg);padding:8px 0 6px;margin-bottom:8px;}
+  .toolbar{position:sticky;top:var(--tkh,0px);z-index:4;background:var(--bg);padding:8px 0 6px;margin-bottom:8px;}
   .tb-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   .searchbox{position:relative;flex:1;min-width:200px;}
   .searchbox input{padding-left:34px;padding-right:34px;}
@@ -396,50 +399,64 @@ function renderTicker(){
     return { name:t.name, salary:b.salary, transport:b.transport, total:b.salary + b.transport };
   }).filter(r => r.total > EPS).sort((a, b) => b.total - a.total);
   el.classList.remove('hidden');
+  const parts = [];
+  if(rows.length){
+    const sTot = rows.reduce((a, r) => a + r.salary, 0), tTot = rows.reduce((a, r) => a + r.transport, 0);
+    parts.push('<span class="tk-item total"><b>TOTAL OUTSTANDING</b> <span class="amt">' + rs(sTot + tTot) + '</span> <span class="sub">(salary ' + rs(sTot) + ' · transport ' + rs(tTot) + ') · ' + rows.length + ' technician' + (rows.length === 1 ? '' : 's') + '</span></span>');
+    rows.forEach(r => {
+      const sub = [r.salary > EPS ? 'salary ' + rs(r.salary) : '', r.transport > EPS ? 'transport ' + rs(r.transport) : ''].filter(Boolean).join(' · ');
+      parts.push('<span class="tk-item"><b>' + esc(r.name) + '</b> <span class="amt">' + rs(r.total) + '</span> <span class="sub">(' + sub + ')</span></span>');
+    });
+  }
   if(!rows.length){
     el.classList.add('clear');
     el.innerHTML = '<div class="tk-label">✔ Arrears</div><div class="tk-view"><div class="tk-item ok" style="padding:8px 14px;">No outstanding arrears for any technician (before ' + esc(currentDay) + ')</div></div>';
-    return;
-  }
-  el.classList.remove('clear');
-  const sTot = rows.reduce((a, r) => a + r.salary, 0), tTot = rows.reduce((a, r) => a + r.transport, 0);
-  const parts = [];
-  parts.push('<span class="tk-item total"><b>TOTAL OUTSTANDING</b> <span class="amt">' + rs(sTot + tTot) + '</span> <span class="sub">(salary ' + rs(sTot) + ' · transport ' + rs(tTot) + ') · ' + rows.length + ' technician' + (rows.length === 1 ? '' : 's') + '</span></span>');
-  rows.forEach(r => {
-    const sub = [r.salary > EPS ? 'salary ' + rs(r.salary) : '', r.transport > EPS ? 'transport ' + rs(r.transport) : ''].filter(Boolean).join(' · ');
-    parts.push('<span class="tk-item"><b>' + esc(r.name) + '</b> <span class="amt">' + rs(r.total) + '</span> <span class="sub">(' + sub + ')</span></span>');
-  });
+    syncTickerHeight(); return;
+  } else el.classList.remove('clear');
   const line = parts.join('<span class="tk-sep">●</span>');
-  el.innerHTML = '<div class="tk-label">⚠ Arrears</div><div class="tk-view"><div class="tk-track">' + line + '<span class="tk-sep">●</span></div></div>';
+  el.innerHTML = '<div class="tk-label">' + '⚠ Arrears' + '</div><div class="tk-view"><div class="tk-track">' + line + '<span class="tk-sep">●</span></div></div>';
   // keep scroll speed steady (~70px/sec) regardless of how many names there are
   const track = el.querySelector('.tk-track');
   requestAnimationFrame(() => { track.style.setProperty('--dur', Math.max(15, Math.round((track.scrollWidth + el.clientWidth) / 70)) + 's'); });
+  syncTickerHeight();
 }
+function syncTickerHeight(){
+  const el = $('arrearsTicker');
+  requestAnimationFrame(() => document.documentElement.style.setProperty('--tkh', (el.classList.contains('hidden') ? 0 : el.offsetHeight) + 'px'));
+}
+window.addEventListener('resize', syncTickerHeight);
 $('arrearsTicker').addEventListener('click', () => {
   if($('arrearsTicker').classList.contains('clear')) return;
   F.f = F.f === 'arrears' ? 'all' : 'arrears'; applyFilter(); $('cards').scrollIntoView({ behavior:'smooth', block:'start' });
 });
 
-/* ---------- side panel: working list (present / half day, out time not entered yet) ---------- */
+/* ---------- side panel: working (no out time) + off (out time entered) ---------- */
 function renderUnpaid(){
-  const rows = techs.map(t => {
+  const working = [], off = [];
+  techs.forEach(t => {
     const card = document.querySelector(`.tc[data-id="${t.id}"]`), e = existing[t.id];
-    // use the live card (so it updates as you type); fall back to saved entry
     const att = card ? card.dataset.att : (e ? e.attendance : '');
-    if(att !== 'present' && att !== 'half_day') return null;
-    const tin = card ? card.querySelector('[data-f="timeIn"]').value : (e && e.time_in) || '';
-    const tout = card ? card.querySelector('[data-f="timeOut"]').value : (e && e.time_out) || '';
-    if(tout) return null;   // out time entered -> no longer working
-    return { id:t.id, name:t.name, half:att === 'half_day', tin, unsaved: !!(card && card.classList.contains('dirty')) };
-  }).filter(Boolean);
-  const total = techs.filter(t => { const c = document.querySelector(`.tc[data-id="${t.id}"]`); return c && (c.dataset.att === 'present' || c.dataset.att === 'half_day'); }).length;
+    if(att !== 'present' && att !== 'half_day') return;
+    const r = card ? readCard(card) : { timeIn:e.time_in, timeOut:e.time_out, salDue:Number(e.salary_due), salPaid:Number(e.salary_paid) };
+    const row = { id:t.id, name:t.name, half:att === 'half_day', tin:r.timeIn || '', tout:r.timeOut || '', unsaved:!!(card && card.classList.contains('dirty')) };
+    if(!row.tout){ working.push(row); return; }
+    const sal = +(r.salDue - r.salPaid).toFixed(2);
+    row.sal = sal > EPS ? sal : 0;                       // today's salary arrears only
+    const m = hoursMin(row.tin, row.tout); row.hrs = m != null ? hoursTxt(m) : '';
+    off.push(row);
+  });
   const isToday = currentDay === ymd(new Date());
-  $('unpaidPanel').innerHTML = `<h2>${isToday ? 'Working now' : 'Working list'}</h2><div class="sd">${esc(niceDate(currentDay))}<br>Present / half day, no out time yet</div>`
-    + (rows.length
-      ? `<div class="tot">${rows.length} technician${rows.length === 1 ? '' : 's'} still working</div>`
-        + rows.map(r => `<button type="button" class="up" data-id="${r.id}"><b>${esc(r.name)}</b><span>${r.half ? 'Half day · ' : ''}${r.tin ? 'In <em>' + esc(r.tin) + '</em>' : 'In time not set'}${r.unsaved ? ' · unsaved' : ''}</span></button>`).join('')
-      : `<div class="allpaid">${total ? '✔ All working technicians have an out time' : 'Nobody marked as working yet'}</div>`)
-    + `<div class="note">Enter the Out time on a card and the name disappears from this list.</div>`;
+  $('unpaidPanel').innerHTML = `<h2>${isToday ? 'Working now' : 'Working list'}</h2><div class="sd">${esc(niceDate(currentDay))}</div>`
+    + (working.length
+      ? `<div class="tot">${working.length} technician${working.length === 1 ? '' : 's'} still working</div>`
+        + working.map(r => `<button type="button" class="up" data-id="${r.id}"><b>${esc(r.name)}</b><span>${r.half ? 'Half day · ' : ''}${r.tin ? 'In <em>' + esc(r.tin) + '</em>' : 'In time not set'}${r.unsaved ? ' · unsaved' : ''}</span></button>`).join('')
+      : `<div class="allpaid">${off.length ? '✔ Nobody is working now' : 'Nobody marked as working yet'}</div>`)
+    + `<h2 style="margin-top:14px;">Off (out time entered)</h2>`
+    + (off.length
+      ? `<div class="tot offtot">${off.length} technician${off.length === 1 ? '' : 's'} off</div>`
+        + off.map(r => `<button type="button" class="up" data-id="${r.id}"><b>${esc(r.name)} <span class="offtag">OFF</span></b><span>${r.half ? 'Half day · ' : ''}In ${esc(r.tin || '—')} · Out ${esc(r.tout)}${r.hrs ? ' (' + esc(r.hrs) + ')' : ''}${r.unsaved ? ' · unsaved' : ''}</span>${r.sal ? '<span>Today\'s salary arrears <em>' + rs(r.sal) + '</em></span>' : ''}</button>`).join('')
+      : '<div class="note" style="margin:0;">Nobody has an out time yet.</div>')
+    + `<div class="note">Enter the Out time on a card and the name moves from Working to Off.</div>`;
 }
 const updatedCount = () => techs.filter(t => existing[t.id]).length;
 $('unpaidPanel').addEventListener('click', e => {
@@ -771,7 +788,7 @@ async function saveCards(cards){
     }
   }
   btns.forEach(b => b.disabled = false);
-  renderSummary(); renderUnpaid(); updateDirty(); applyFilter();
+  renderSummary(); renderTicker(); renderUnpaid(); updateDirty(); applyFilter();
   if(saved) toast('✔ Saved ' + saved + ' ' + (saved === 1 ? 'entry' : 'entries'));
   if(failed.length) await modal({ title:'Some entries could not be saved', ok:'OK', cancel:null, html:'<ul>' + failed.map(f => `<li class="e">${esc(f)}</li>`).join('') + '</ul><p>These cards are still open with your changes — fix the problem and save again.</p>' });
 }
