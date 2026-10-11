@@ -243,7 +243,7 @@
     <div class="grid" id="cards"></div>
     <div class="empty hidden" id="noMatch">No technicians match your search or filter.<br><button type="button" class="linkbtn" id="noMatchReset">Reset search &amp; filters</button></div>
     </div>
-    <aside class="side card" id="unpaidPanel" aria-label="Technicians not yet paid"></aside>
+    <aside class="side card" id="unpaidPanel" aria-label="Technicians currently working"></aside>
     </div>
   </div>
 </div>
@@ -420,29 +420,33 @@ $('arrearsTicker').addEventListener('click', () => {
   F.f = F.f === 'arrears' ? 'all' : 'arrears'; applyFilter(); $('cards').scrollIntoView({ behavior:'smooth', block:'start' });
 });
 
-/* ---------- side panel: technicians not yet fully paid on this date ---------- */
+/* ---------- side panel: working list (present / half day, out time not entered yet) ---------- */
 function renderUnpaid(){
   const rows = techs.map(t => {
-    const e = existing[t.id]; if(!e) return null;
-    const s = +(Number(e.salary_due) - Number(e.salary_paid)).toFixed(2), tr = +(Number(e.transport_due) - Number(e.transport_paid)).toFixed(2);
-    if(s <= EPS && tr <= EPS) return null;
-    return { id:t.id, name:t.name, s:Math.max(s, 0), tr:Math.max(tr, 0) };
-  }).filter(Boolean).sort((a, b) => (b.s + b.tr) - (a.s + a.tr));
-  const notUpd = techs.filter(t => !existing[t.id]).length;
+    const card = document.querySelector(`.tc[data-id="${t.id}"]`), e = existing[t.id];
+    // use the live card (so it updates as you type); fall back to saved entry
+    const att = card ? card.dataset.att : (e ? e.attendance : '');
+    if(att !== 'present' && att !== 'half_day') return null;
+    const tin = card ? card.querySelector('[data-f="timeIn"]').value : (e && e.time_in) || '';
+    const tout = card ? card.querySelector('[data-f="timeOut"]').value : (e && e.time_out) || '';
+    if(tout) return null;   // out time entered -> no longer working
+    return { id:t.id, name:t.name, half:att === 'half_day', tin, unsaved: !!(card && card.classList.contains('dirty')) };
+  }).filter(Boolean);
+  const total = techs.filter(t => { const c = document.querySelector(`.tc[data-id="${t.id}"]`); return c && (c.dataset.att === 'present' || c.dataset.att === 'half_day'); }).length;
   const isToday = currentDay === ymd(new Date());
-  const sT = rows.reduce((a, r) => a + r.s, 0), tT = rows.reduce((a, r) => a + r.tr, 0);
-  $('unpaidPanel').innerHTML = `<h2>${isToday ? 'Not yet paid today' : 'Not yet paid'}</h2><div class="sd">${esc(niceDate(currentDay))}</div>`
+  $('unpaidPanel').innerHTML = `<h2>${isToday ? 'Working now' : 'Working list'}</h2><div class="sd">${esc(niceDate(currentDay))}<br>Present / half day, no out time yet</div>`
     + (rows.length
-      ? `<div class="tot">${rows.length} technician${rows.length === 1 ? '' : 's'} · ${rs(sT + tT)} unpaid<br><span style="font-weight:600;">salary ${rs(sT)} · transport ${rs(tT)}</span></div>`
-        + rows.map(r => `<button type="button" class="up" data-id="${r.id}"><b>${esc(r.name)}</b><span>${[r.s > EPS ? 'Salary <em>' + rs(r.s) + '</em>' : '', r.tr > EPS ? 'Transport <em>' + rs(r.tr) + '</em>' : ''].filter(Boolean).join(' · ')}</span></button>`).join('')
-      : `<div class="allpaid">${updatedCount() ? '✔ Everyone saved is fully paid' : 'No entries saved yet'}</div>`)
-    + (notUpd ? `<div class="note">${notUpd} technician${notUpd === 1 ? ' is' : 's are'} not updated yet (not counted here).</div>` : '');
+      ? `<div class="tot">${rows.length} technician${rows.length === 1 ? '' : 's'} still working</div>`
+        + rows.map(r => `<button type="button" class="up" data-id="${r.id}"><b>${esc(r.name)}</b><span>${r.half ? 'Half day · ' : ''}${r.tin ? 'In <em>' + esc(r.tin) + '</em>' : 'In time not set'}${r.unsaved ? ' · unsaved' : ''}</span></button>`).join('')
+      : `<div class="allpaid">${total ? '✔ All working technicians have an out time' : 'Nobody marked as working yet'}</div>`)
+    + `<div class="note">Enter the Out time on a card and the name disappears from this list.</div>`;
 }
 const updatedCount = () => techs.filter(t => existing[t.id]).length;
 $('unpaidPanel').addEventListener('click', e => {
   const b = e.target.closest('.up'); if(!b) return;
   resetFilters();
   const card = document.querySelector(`.tc[data-id="${b.dataset.id}"]`); if(!card) return;
+  card.classList.add('has-times');   // show In/Out boxes even if tracking is off
   card.scrollIntoView({ behavior:'smooth', block:'center' });
   card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 1800);
 });
@@ -535,7 +539,7 @@ function updateDirty(){
   const n = dirtyCards().length;
   $('dirtyCount').textContent = n ? n + ' unsaved change' + (n === 1 ? '' : 's') : 'No unsaved changes';
   $('saveAllBtn').disabled = !n;
-  renderChips();
+  renderChips(); renderUnpaid();
 }
 
 function updateHrs(card){
