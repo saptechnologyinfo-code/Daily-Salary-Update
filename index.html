@@ -46,6 +46,13 @@
   .ticker .tk-item .amt{color:var(--danger);font-weight:800;}
   .ticker .tk-item .sub{color:var(--muted);font-size:.78rem;}
   .ticker .tk-item.total .amt{color:var(--warn);}
+  .ticker .tk-item .adv{color:var(--success);font-weight:800;}
+  .calc .adv{color:var(--success);}
+  .sechead{display:flex;align-items:center;gap:8px;font-size:1rem;font-weight:800;margin:18px 0 8px;padding-bottom:6px;border-bottom:2px solid var(--border);}
+  .sechead .cnt{font-size:.75rem;font-weight:700;background:var(--input);border:1px solid var(--border);color:var(--muted);border-radius:20px;padding:2px 10px;}
+  .sechead.off{margin-top:26px;color:var(--muted);}
+  .advbox{font-size:.8rem;font-weight:700;color:var(--success);background:var(--input);border:1px dashed var(--success);border-radius:10px;padding:7px 10px;margin-bottom:8px;}
+  .advbox span{font-weight:500;color:var(--muted);}
   .ticker .offtag{display:inline-block;background:var(--grey);color:#fff;font-size:.66rem;font-weight:800;padding:2px 8px;border-radius:20px;vertical-align:1px;}
   .ticker .tk-item.ok{color:var(--success);font-weight:700;}
   .ticker .tk-sep{color:var(--muted);padding-right:22px;align-self:center;}
@@ -243,7 +250,12 @@
     </div>
     <div class="resultbar"><span id="resultCount"></span><button type="button" class="linkbtn hidden" id="resetFilters">Reset search &amp; filters</button></div>
 
-    <div class="grid" id="cards"></div>
+    <div id="cards">
+      <div class="sechead" id="workHead">🟢 Working / not yet out <span class="cnt" id="workCnt">0</span></div>
+      <div class="grid" id="gridWork"></div>
+      <div class="sechead off" id="offHead">⚪ Off — out time entered <span class="cnt" id="offCnt">0</span></div>
+      <div class="grid" id="gridOff"></div>
+    </div>
     <div class="empty hidden" id="noMatch">No technicians match your search or filter.<br><button type="button" class="linkbtn" id="noMatchReset">Reset search &amp; filters</button></div>
     </div>
     <aside class="side card" id="unpaidPanel" aria-label="Technicians currently working"></aside>
@@ -397,7 +409,10 @@ function renderTicker(){
   const rows = techs.map(t => {
     const b = bf[t.id] || { salary:0, transport:0 };
     return { name:t.name, salary:b.salary, transport:b.transport, total:b.salary + b.transport };
-  }).filter(r => r.total > EPS).sort((a, b) => b.total - a.total);
+  }).filter(r => Math.abs(r.salary) > EPS || Math.abs(r.transport) > EPS);
+  const adv = rows.map(r => ({ name:r.name, salary:Math.max(-r.salary, 0), transport:Math.max(-r.transport, 0) })).filter(r => r.salary + r.transport > EPS).sort((a, b) => (b.salary + b.transport) - (a.salary + a.transport));
+  rows.forEach(r => { r.salary = Math.max(r.salary, 0); r.transport = Math.max(r.transport, 0); r.total = r.salary + r.transport; });
+  rows.splice(0, rows.length, ...rows.filter(r => r.total > EPS).sort((a, b) => b.total - a.total));
   el.classList.remove('hidden');
   const parts = [];
   if(rows.length){
@@ -408,7 +423,15 @@ function renderTicker(){
       parts.push('<span class="tk-item"><b>' + esc(r.name) + '</b> <span class="amt">' + rs(r.total) + '</span> <span class="sub">(' + sub + ')</span></span>');
     });
   }
-  if(!rows.length){
+  if(adv.length){
+    const aS = adv.reduce((a, r) => a + r.salary, 0), aT = adv.reduce((a, r) => a + r.transport, 0);
+    parts.push('<span class="tk-item total"><b>TOTAL ADVANCE (OVERPAID)</b> <span class="adv">' + rs(aS + aT) + '</span> <span class="sub">(salary ' + rs(aS) + ' · transport ' + rs(aT) + ') · ' + adv.length + ' technician' + (adv.length === 1 ? '' : 's') + '</span></span>');
+    adv.forEach(r => {
+      const sub = [r.salary > EPS ? 'salary ' + rs(r.salary) : '', r.transport > EPS ? 'transport ' + rs(r.transport) : ''].filter(Boolean).join(' · ');
+      parts.push('<span class="tk-item"><b>' + esc(r.name) + '</b> <span class="adv">+' + rs(r.salary + r.transport) + ' advance</span> <span class="sub">(' + sub + ')</span></span>');
+    });
+  }
+  if(!rows.length && !adv.length){
     el.classList.add('clear');
     el.innerHTML = '<div class="tk-label">✔ Arrears</div><div class="tk-view"><div class="tk-item ok" style="padding:8px 14px;">No outstanding arrears for any technician (before ' + esc(currentDay) + ')</div></div>';
     syncTickerHeight(); return;
@@ -441,7 +464,7 @@ function renderUnpaid(){
     const row = { id:t.id, name:t.name, half:att === 'half_day', tin:r.timeIn || '', tout:r.timeOut || '', unsaved:!!(card && card.classList.contains('dirty')) };
     if(!row.tout){ working.push(row); return; }
     const sal = +(r.salDue - r.salPaid).toFixed(2);
-    row.sal = sal > EPS ? sal : 0;                       // today's salary arrears only
+    row.sal = sal > EPS ? sal : 0; row.over = sal < -EPS ? -sal : 0;                       // today's salary arrears only
     const m = hoursMin(row.tin, row.tout); row.hrs = m != null ? hoursTxt(m) : '';
     off.push(row);
   });
@@ -454,7 +477,7 @@ function renderUnpaid(){
     + `<h2 style="margin-top:14px;">Off (out time entered)</h2>`
     + (off.length
       ? `<div class="tot offtot">${off.length} technician${off.length === 1 ? '' : 's'} off</div>`
-        + off.map(r => `<button type="button" class="up" data-id="${r.id}"><b>${esc(r.name)} <span class="offtag">OFF</span></b><span>${r.half ? 'Half day · ' : ''}In ${esc(r.tin || '—')} · Out ${esc(r.tout)}${r.hrs ? ' (' + esc(r.hrs) + ')' : ''}${r.unsaved ? ' · unsaved' : ''}</span>${r.sal ? '<span>Today\'s salary arrears <em>' + rs(r.sal) + '</em></span>' : ''}</button>`).join('')
+        + off.map(r => `<button type="button" class="up" data-id="${r.id}"><b>${esc(r.name)} <span class="offtag">OFF</span></b><span>${r.half ? 'Half day · ' : ''}In ${esc(r.tin || '—')} · Out ${esc(r.tout)}${r.hrs ? ' (' + esc(r.hrs) + ')' : ''}${r.unsaved ? ' · unsaved' : ''}</span>${r.sal ? '<span>Today\'s salary arrears <em>' + rs(r.sal) + '</em></span>' : ''}${r.over ? '<span>Today\'s salary overpaid (advance) <em>' + rs(r.over) + '</em></span>' : ''}</button>`).join('')
       : '<div class="note" style="margin:0;">Nobody has an out time yet.</div>')
     + `<div class="note">Enter the Out time on a card and the name moves from Working to Off.</div>`;
 }
@@ -486,13 +509,15 @@ function renderSummary(){
     else if(e.attendance === 'absent') groups.absent.push(esc(t.name));
     else groups.leave.push(esc(t.name));
   });
-  const bfAll = techs.reduce((a, t) => a + ((bf[t.id] || {}).salary || 0) + ((bf[t.id] || {}).transport || 0), 0);
+  const bfAll = techs.reduce((a, t) => a + Math.max((bf[t.id] || {}).salary || 0, 0) + Math.max((bf[t.id] || {}).transport || 0, 0), 0);
+  const advAll = techs.reduce((a, t) => a + Math.max(-((bf[t.id] || {}).salary || 0), 0) + Math.max(-((bf[t.id] || {}).transport || 0), 0), 0);
   const tile = (label, arr, c, f) => `<button type="button" class="tile" data-f="${f}" style="--c:${c}" title="Click to filter the list"><div class="l">${label}</div><div class="n">${arr.length}</div><div class="names">${arr.join(', ') || '<i>—</i>'}</div></button>`;
   $('summary').innerHTML = tile('Working', groups.work, 'var(--success)', 'work') + tile('Absent', groups.absent, 'var(--danger)', 'absent') +
                            tile('On leave', groups.leave, 'var(--grey)', 'leave') + tile('Not updated yet', groups.none, 'var(--warn)', 'none');
   $('dayTotals').innerHTML = `${niceDate(currentDay)} — Earned: salary <b>${rs(sDue)}</b>, transport <b>${rs(tDue)}</b> · Paid: salary <b>${rs(sPaid)}</b>, transport <b>${rs(tPaid)}</b>` + (hrsTotal ? ` · Hours logged: <b>${hoursTxt(hrsTotal)}</b>` : '')
     + (etfT ? ` · ETF deducted: <b>${rs(etfT)}</b>` : '') + (setT ? ` · Arrears settled: <b>${rs(setT)}</b>` : '')
-    + (bfAll > EPS ? ` · Arrears brought forward (all): <b>${rs(bfAll)}</b>` : '');
+    + (bfAll > EPS ? ` · Arrears brought forward (all): <b>${rs(bfAll)}</b>` : '')
+    + (advAll > EPS ? ` · Advance (overpaid) brought forward: <b style="color:var(--success)">${rs(advAll)}</b>` : '');
   $('banner').innerHTML = updated
     ? `<div class="banner warn">⚠ ${updated} of ${techs.length} technician${techs.length === 1 ? '' : 's'} already ha${updated === 1 ? 's' : 've'} salary details saved for this date (amber cards). Saving them again will replace the earlier entry.</div>`
     : (techs.length ? '<div class="banner info">No salary details saved for this date yet.</div>' : '');
@@ -510,17 +535,19 @@ function cardHtml(t){
   const hasTimes = !!(e && (e.time_in || e.time_out));
   const isMember = etfSet.has(t.id) || !!(e && Number(e.etf_deduction) > 0);
   const etfHtml = isMember ? `<div class="etfrow">${num('etf', 'ETF deduction (permanent member)', e ? e.etf_deduction : '')}</div>` : '';
-  const b = bf[t.id] || { salary: 0, transport: 0 }, outAll = b.salary + b.transport;
+  const b = bf[t.id] || { salary: 0, transport: 0 }, outAll = Math.max(b.salary, 0) + Math.max(b.transport, 0);
+  const advS = Math.max(-b.salary, 0), advT = Math.max(-b.transport, 0);
+  const advHtml = (advS > EPS || advT > EPS) ? `<div class="advbox">💰 Advance (overpaid) brought forward: ${rs(advS + advT)} <span>${[advS > EPS ? 'salary ' + rs(advS) : '', advT > EPS ? 'transport ' + rs(advT) : ''].filter(Boolean).join(' · ')}</span></div>` : '';
   const hasSettle = !!(e && (Number(e.arrears_salary_paid) || Number(e.arrears_transport_paid)));
   const settleHtml = (outAll > EPS || hasSettle) ? `<details class="settle" ${hasSettle ? 'open' : ''}>
       <summary>💳 Arrears settlement — outstanding ${rs(Math.max(outAll, 0))}</summary>
-      <div class="hint">Before this day: salary ${rs(b.salary)} · transport ${rs(b.transport)}</div>
+      <div class="hint">Before this day: salary ${rs(Math.max(b.salary, 0))} · transport ${rs(Math.max(b.transport, 0))}</div>
       <div class="amts">${num('asal', 'Salary arrears paid', e ? e.arrears_salary_paid : '')}${num('atr', 'Transport arrears paid', e ? e.arrears_transport_paid : '')}</div>
       <div class="amts"><div><label>Arrears day (optional)</label><input type="date" data-f="aday" value="${e && e.arrears_day ? e.arrears_day : ''}" /></div>
         <div style="display:flex;align-items:flex-end;"><button type="button" class="mini full" data-settleall="1">Settle all outstanding</button></div></div>
     </details>` : '';
   const timeBox = (f, label, val) => `<div><label>${label}</label><div class="tin"><input type="time" data-f="${f}" value="${val || ''}" /><button type="button" class="now" data-now="${f}" title="Set to the current time">Now</button></div></div>`;
-  return `<div class="tc ${e ? 'saved' : ''} ${hasTimes ? 'has-times' : ''}" data-id="${t.id}" data-att="${att}" data-arrears="${outAll > EPS ? '1' : '0'}" data-etf="${isMember ? '1' : '0'}" ${e && Number(e.etf_deduction) > 0 ? 'data-etf-manual="1"' : ''}>
+  return `<div class="tc ${e ? 'saved' : ''} ${hasTimes ? 'has-times' : ''}" data-id="${t.id}" data-att="${att}" data-arrears="${outAll > EPS ? '1' : '0'}" data-advance="${(advS + advT) > EPS ? '1' : '0'}" data-etf="${isMember ? '1' : '0'}" ${e && Number(e.etf_deduction) > 0 ? 'data-etf-manual="1"' : ''}>
     <div class="tc-head"><b>${esc(t.name)}</b><span style="display:flex;gap:6px;align-items:center;">${isMember ? '<span class="badge-etf" title="Permanent member — ETF deducted">ETF</span>' : ''}<span class="pill ${e ? 'done' : 'none'}">${e ? 'Updated' : 'Not updated'}</span></span></div>
     ${old}
     <div class="att">${attBtns}</div>
@@ -532,6 +559,7 @@ function cardHtml(t){
       <div class="amts">${num('trDue','Earned',v('transport_due'))}${num('trPaid','Paid',v('transport_paid'))}</div></div>
     <div class="calc"></div>
     ${etfHtml}
+    ${advHtml}
     ${settleHtml}
     <input data-f="note" placeholder="Note (optional)" value="${esc(e ? e.note || '' : '')}" />
     <div class="msgs"></div>
@@ -539,12 +567,33 @@ function cardHtml(t){
   </div>`;
 }
 function renderCards(){
-  $('cards').innerHTML = techs.length ? techs.map(cardHtml).join('') : '<div class="empty">No active technicians found.</div>';
+  $('gridOff').innerHTML = '';
+  $('gridWork').innerHTML = techs.length ? techs.map(cardHtml).join('') : '<div class="empty">No active technicians found.</div>';
   document.querySelectorAll('.tc').forEach(updateCalc);
+  regroup();
 }
+/* Off = Present/Half day with an out time entered. They move to their own section for easy update. */
+function isOff(card){
+  if(card.dataset.att !== 'present' && card.dataset.att !== 'half_day') return false;
+  const o = card.querySelector('[data-f="timeOut"]'); return !!(o && o.value);
+}
+function regroup(){
+  const gw = $('gridWork'), go = $('gridOff'), act = document.activeElement;
+  Array.from(document.querySelectorAll('.tc')).forEach(card => {
+    if(act && card.contains(act) && act.matches && act.matches('input[type="time"]')) return;   // don't move while typing
+    const target = isOff(card) ? go : gw;
+    if(card.parentElement !== target){ target.appendChild(card); card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 1800); }
+  });
+  const nw = gw.querySelectorAll('.tc').length, no = go.querySelectorAll('.tc').length;
+  $('workCnt').textContent = nw; $('offCnt').textContent = no;
+  $('offHead').classList.toggle('hidden', !no); go.classList.toggle('hidden', !no);
+  $('workHead').classList.toggle('hidden', !techs.length);
+}
+document.addEventListener('focusout', e => { if(e.target && e.target.matches && e.target.matches('input[type="time"]')) setTimeout(() => { regroup(); renderUnpaid(); }, 0); });
+document.addEventListener('change', e => { if(e.target && e.target.matches && e.target.matches('input[type="time"]')) setTimeout(() => { regroup(); renderUnpaid(); }, 0); });
 function replaceCard(id){
   const t = techs.find(x => x.id === id), old = document.querySelector(`.tc[data-id="${id}"]`);
-  const tmp = document.createElement('div'); tmp.innerHTML = cardHtml(t); const nc = tmp.firstElementChild; old.replaceWith(nc); updateCalc(nc);
+  const tmp = document.createElement('div'); tmp.innerHTML = cardHtml(t); const nc = tmp.firstElementChild; old.replaceWith(nc); updateCalc(nc); regroup();
 }
 function markDirty(card){
   card.classList.add('dirty');
@@ -556,7 +605,7 @@ function updateDirty(){
   const n = dirtyCards().length;
   $('dirtyCount').textContent = n ? n + ' unsaved change' + (n === 1 ? '' : 's') : 'No unsaved changes';
   $('saveAllBtn').disabled = !n;
-  renderChips(); renderUnpaid();
+  regroup(); renderChips(); renderUnpaid();
 }
 
 function updateHrs(card){
@@ -569,7 +618,7 @@ function updateCalc(card){
     const d = +(due - paid).toFixed(2);
     if(!due && !paid) return '';
     if(d > EPS) return `${label}: <span class="owe">${rs(d)} unpaid</span>`;
-    if(d < -EPS) return `${label}: <span class="over">${rs(-d)} overpaid</span>`;
+    if(d < -EPS) return `${label}: <span class="over">${rs(-d)} overpaid (advance)</span>`;
     return `${label}: <span class="ok">fully paid ✓</span>`;
   };
   el.innerHTML = [one('Salary', r.salDue, r.salPaid), one('Transport', r.trDue, r.trPaid)].filter(Boolean).join(' · ');
@@ -675,10 +724,10 @@ function setAttendance(card, a){
 }
 
 /* ---------- search + filter + sort ---------- */
-const CHIPS = [ ['all','All'], ['none','Not updated'], ['updated','Updated'], ['work','Working'], ['absent','Absent'], ['leave','On leave'], ['unsaved','Unsaved'], ['etf','ETF members'], ['arrears','Has arrears'] ];
+const CHIPS = [ ['all','All'], ['none','Not updated'], ['updated','Updated'], ['work','Working'], ['absent','Absent'], ['leave','On leave'], ['unsaved','Unsaved'], ['etf','ETF members'], ['arrears','Has arrears'], ['advance','Has advance'] ];
 function cardInfo(card){
   const e = existing[card.dataset.id];
-  return { updated:!!e, att:card.dataset.att, dirty:card.classList.contains('dirty'), etf:card.dataset.etf === '1', arrears:card.dataset.arrears === '1' };
+  return { updated:!!e, att:card.dataset.att, dirty:card.classList.contains('dirty'), etf:card.dataset.etf === '1', arrears:card.dataset.arrears === '1', advance:card.dataset.advance === '1' };
 }
 function chipMatch(f, i){
   switch(f){
@@ -691,6 +740,7 @@ function chipMatch(f, i){
     case 'unsaved': return i.dirty;
     case 'etf': return i.etf;
     case 'arrears': return i.arrears;
+    case 'advance': return i.advance;
   }
   return true;
 }
