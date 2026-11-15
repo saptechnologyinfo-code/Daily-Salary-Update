@@ -182,7 +182,47 @@
   .modal .body .e{color:var(--danger);} .modal .body .w{color:var(--warn);}
   .modal .foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px 16px;border-top:1px solid var(--border);}
   .toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 18px;border-radius:24px;font-size:.85rem;font-weight:700;z-index:30;box-shadow:0 4px 14px rgba(0,0,0,.3);}
+
+  /* ===== QR attendance ===== */
+  .grid > .empty{grid-column:1/-1;}
+  .qrbtns{display:flex;gap:8px;flex-wrap:wrap;}
+  .scanbox{max-width:560px;}
+  .scanmode{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;}
+  .scanmode button{padding:10px 4px;border:1px solid var(--border);background:var(--input);color:var(--text);border-radius:8px;font-weight:700;font-size:.82rem;}
+  .scanmode button.on{background:var(--primary);border-color:var(--primary);color:#fff;}
+  .vwrap{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3;}
+  .vwrap video{width:100%;height:100%;object-fit:cover;display:block;}
+  .vwrap .frame{position:absolute;inset:18%;border:3px solid rgba(255,255,255,.85);border-radius:14px;box-shadow:0 0 0 999px rgba(0,0,0,.28);pointer-events:none;}
+  .scanres{margin:10px 0 6px;padding:12px;border-radius:10px;font-weight:700;font-size:.95rem;text-align:center;border:1px solid var(--border);background:var(--input);color:var(--muted);}
+  .scanres.ok{background:var(--ok-bg);border-color:var(--success);color:var(--success);}
+  .scanres.dup{background:var(--warn-bg);border-color:var(--warn);color:var(--warn);}
+  .scanres.err{background:var(--err-bg);border-color:var(--danger);color:var(--danger);}
+  #scanLog{list-style:none;margin:6px 0 0;padding:0;font-size:.8rem;}
+  #scanLog li{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);}
+  #scanLog .t{color:var(--muted);white-space:nowrap;}
+  #scanCount{font-size:.75rem;font-weight:700;color:var(--muted);margin-left:6px;}
+
+  #qrSheet{position:fixed;inset:0;z-index:25;background:var(--bg);overflow:auto;padding:14px;}
+  #qrSheet .qr-tools{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;max-width:900px;margin:0 auto 14px;}
+  #qrSheet .qr-tools > div{flex:1;min-width:200px;}
+  #qrSheet .qr-note{max-width:900px;margin:0 auto 12px;font-size:.8rem;color:var(--muted);}
+  .qr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;max-width:900px;margin:0 auto;}
+  .qr-card{background:#fff;color:#0f172a;border:1.5px solid #0f172a;border-radius:10px;padding:10px;text-align:center;break-inside:avoid;page-break-inside:avoid;}
+  .qr-card .qh{font-size:.62rem;font-weight:800;letter-spacing:.12em;color:#475569;}
+  .qr-card .qn{font-size:1.05rem;font-weight:800;margin:4px 0 6px;word-break:break-word;}
+  .qr-card .qq{width:150px;height:150px;margin:0 auto;}
+  .qr-card .qq svg{width:100%;height:100%;display:block;}
+  .qr-card .qf{font-size:.62rem;color:#64748b;margin-top:4px;}
+  @media print{
+    body > *:not(#qrSheet){display:none !important;}
+    #qrSheet{position:static;background:#fff;padding:0;overflow:visible;}
+    #qrSheet .noprint{display:none !important;}
+    .qr-grid{grid-template-columns:repeat(2,1fr);gap:8mm;max-width:none;}
+    .qr-card{width:auto;}
+  }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -216,6 +256,10 @@
       <button class="btn btn-ghost" id="nextDay" title="Next day">&rarr;</button>
       <button class="btn btn-ghost" id="todayBtn">Today</button>
       <div><label class="tgl" title="Show optional in/out time boxes on every card"><input type="checkbox" id="trackTimes" /> ⏱ Track in/out time</label></div>
+      <div class="qrbtns">
+        <button class="btn" id="scanBtn" title="Open the webcam and mark attendance by scanning QR cards">📷 Scan QR attendance</button>
+        <button class="btn btn-ghost" id="qrCardsBtn" title="Create printable QR attendance cards">🪪 QR cards</button>
+      </div>
     </div>
 
     <details class="defaults" id="defaultsBox">
@@ -263,6 +307,37 @@
   </div>
 </div>
 
+
+<!-- ===== QR scanner ===== -->
+<div class="overlay hidden" id="scanOv">
+  <div class="modal scanbox">
+    <h2>📷 QR attendance <span id="scanCount"></span></h2>
+    <div class="body">
+      <div class="scanmode" id="scanMode">
+        <button type="button" data-m="in" class="on">☀ Check IN (morning)</button>
+        <button type="button" data-m="out">🌙 Check OUT</button>
+      </div>
+      <div class="vwrap"><video id="scanVideo" muted playsinline></video><div class="frame"></div></div>
+      <div class="scanres" id="scanResult">Starting camera…</div>
+      <ul id="scanLog"></ul>
+    </div>
+    <div class="foot">
+      <button type="button" class="btn btn-ghost" id="scanSwitch">Switch camera</button>
+      <button type="button" class="btn" id="scanClose">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Printable QR cards ===== -->
+<div id="qrSheet" class="hidden">
+  <div class="qr-tools noprint">
+    <div><label for="qrWho">Technician</label><select id="qrWho"></select></div>
+    <button type="button" class="btn" id="qrPrint">🖨 Print</button>
+    <button type="button" class="btn btn-ghost" id="qrClose">Close</button>
+  </div>
+  <div class="qr-note noprint">Print on card stock and cut out. Each card is personal — anyone holding it can check that technician in, so keep them with the technician.</div>
+  <div class="qr-grid" id="qrGrid"></div>
+</div>
 <div class="savebar hidden" id="savebar">
   <span id="dirtyCount">No unsaved changes</span>
   <button class="btn" id="saveAllBtn" disabled>Save all changes</button>
@@ -346,6 +421,8 @@ function updateDefHint(){
     : 'Set a default salary and transport so the amounts fill in automatically.';
   $('defaultsBox').open = !(s || t) || $('defaultsBox').open;
 }
+/* Show a message inside the card grid WITHOUT destroying the gridWork / gridOff containers. */
+function setCards(html){ $('gridOff').innerHTML = ''; $('gridWork').innerHTML = html; }
 async function start(){
   $('loginBox').classList.add('hidden'); $('main').classList.remove('hidden'); $('savebar').classList.remove('hidden');
   $('whoName').textContent = 'Signed in as ' + (admin.name || admin.username || 'admin');
@@ -362,11 +439,11 @@ async function start(){
     try{ localStorage.setItem('dailySalaryTrackTimes', $('trackTimes').checked ? '1' : '0'); }catch(e){}
   });
   try{ F.sort = localStorage.getItem('dailySalarySort') || 'name'; $('sortSel').value = F.sort; }catch(e){}
-  $('cards').innerHTML = '<div class="empty">Loading…</div>';
+  setCards('<div class="empty">Loading…</div>');
   try{
     const all = await gsRun('listTechnicians');
     techs = all.filter(t => t.active && t.role !== 'admin').sort((a,b) => a.name.localeCompare(b.name));
-  }catch(e){ $('cards').innerHTML = '<div class="empty">Could not load technicians: ' + esc(e.message) + '<br><button class="btn" onclick="location.reload()" style="margin-top:10px;">Retry</button></div>'; return; }
+  }catch(e){ setCards('<div class="empty">Could not load technicians: ' + esc(e.message) + '<br><button class="btn" onclick="location.reload()" style="margin-top:10px;">Retry</button></div>'); return; }
   $('dayInput').value = currentDay;
   loadDay();
 }
@@ -388,7 +465,7 @@ $('nextDay').addEventListener('click', () => { const d = new Date(currentDay + '
 $('todayBtn').addEventListener('click', () => goToDay(ymd(new Date())));
 
 async function loadDay(){
-  $('cards').innerHTML = '<div class="empty">Loading…</div>'; $('banner').innerHTML = '';
+  setCards('<div class="empty">Loading…</div>'); $('banner').innerHTML = '';
   try{
     const [list, etfIds, bal] = await Promise.all([
       gsRun('listSalaryEntries', null, currentDay, currentDay),
@@ -400,7 +477,7 @@ async function loadDay(){
     existing = {}; list.forEach(e => { existing[e.technician_id] = e; });
     loadedDay = currentDay;
     renderCards(); renderSummary(); renderTicker(); renderUnpaid(); updateDirty(); applyFilter();
-  }catch(e){ $('cards').innerHTML = '<div class="empty">Could not load: ' + esc(e.message) + '<br><button class="btn" id="retryLoad" style="margin-top:10px;">Try again</button></div>'; const r = $('retryLoad'); if(r) r.addEventListener('click', loadDay); }
+  }catch(e){ setCards('<div class="empty">Could not load: ' + esc(e.message) + '<br><button class="btn" id="retryLoad" style="margin-top:10px;">Try again</button></div>'); const r = $('retryLoad'); if(r) r.addEventListener('click', loadDay); }
 }
 
 /* ---------- arrears news ticker (top bar) ---------- */
@@ -844,6 +921,191 @@ async function saveCards(cards){
 }
 $('saveAllBtn').addEventListener('click', () => saveCards(dirtyCards()));
 window.addEventListener('beforeunload', e => { if(dirtyCards().length){ e.preventDefault(); e.returnValue = ''; } });
+
+/* =====================================================================
+ * QR attendance cards + webcam scanner
+ * Card QR  =  "FSM1:" + technician id.   Scanning marks today's attendance
+ * through the SAME upsertSalaryEntry call the cards use, so no backend or
+ * database change is needed. The existing entry is re-read first and all
+ * amounts already entered are preserved.
+ * ===================================================================== */
+const QR_PREFIX = 'FSM1:';
+let scanStream = null, scanTimer = null, scanBusy = false, scanMode = 'in', scanFacing = 'environment', scanAudio = null;
+let lastScan = { code:'', at:0 };
+const scanLog = [];
+const hhmm = d => String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+
+/* ---------- printable QR cards ---------- */
+function qrSvg(text){
+  const q = qrcode(0, 'M'); q.addData(text); q.make();
+  return q.createSvgTag({ cellSize:4, margin:2, scalable:true });
+}
+function renderQrCards(){
+  const who = $('qrWho').value;
+  const list = who === 'all' ? techs : techs.filter(t => String(t.id) === who);
+  $('qrGrid').innerHTML = list.map(t => `<div class="qr-card">
+      <div class="qh">ATTENDANCE CARD</div>
+      <div class="qn">${esc(t.name)}</div>
+      <div class="qq">${qrSvg(QR_PREFIX + t.id)}</div>
+      <div class="qf">Show this card to the camera every morning</div>
+    </div>`).join('');
+}
+$('qrCardsBtn').addEventListener('click', () => {
+  if(typeof qrcode === 'undefined'){ toast('QR library failed to load — check your internet connection.'); return; }
+  if(!techs.length){ toast('No active technicians yet.'); return; }
+  $('qrWho').innerHTML = '<option value="all">All active technicians (' + techs.length + ')</option>' + techs.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+  renderQrCards(); $('qrSheet').classList.remove('hidden');
+});
+$('qrWho').addEventListener('change', renderQrCards);
+$('qrPrint').addEventListener('click', () => window.print());
+$('qrClose').addEventListener('click', () => $('qrSheet').classList.add('hidden'));
+
+/* ---------- scanner UI ---------- */
+function scanSay(kind, text){ const el = $('scanResult'); el.className = 'scanres ' + kind; el.textContent = text; }
+function scanBeep(ok){
+  try{
+    if(!scanAudio) return;
+    const o = scanAudio.createOscillator(), g = scanAudio.createGain();
+    o.frequency.value = ok ? 880 : 220; g.gain.value = .15; o.connect(g); g.connect(scanAudio.destination);
+    o.start(); o.stop(scanAudio.currentTime + (ok ? .15 : .35));
+  }catch(e){}
+}
+function scanProgress(){
+  if(currentDay !== ymd(new Date())) { $('scanCount').textContent = ''; return; }
+  const n = techs.filter(t => existing[t.id] && existing[t.id].time_in).length;
+  $('scanCount').textContent = '· checked in ' + n + ' of ' + techs.length;
+}
+function pushLog(kind, text){
+  scanLog.unshift({ kind, text, t: hhmm(new Date()) }); scanLog.length = Math.min(scanLog.length, 8);
+  $('scanLog').innerHTML = scanLog.map(l => `<li><span style="color:var(--${l.kind === 'ok' ? 'success' : l.kind === 'dup' ? 'warn' : 'danger'})">${esc(l.text)}</span><span class="t">${l.t}</span></li>`).join('');
+}
+
+async function startCamera(){
+  stopCamera();
+  scanSay('', 'Starting camera…');
+  try{
+    scanStream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{ facingMode:{ ideal:scanFacing }, width:{ ideal:1280 }, height:{ ideal:720 } } });
+  }catch(e){
+    const https = location.protocol === 'https:' || location.hostname === 'localhost';
+    scanSay('err', e && e.name === 'NotAllowedError' ? 'Camera permission denied. Allow camera access in the browser address bar, then reopen.'
+      : !https ? 'Camera needs a secure (https) page.' : 'Could not start the camera: ' + (e.message || e.name));
+    return;
+  }
+  const v = $('scanVideo'); v.srcObject = scanStream;
+  try{ await v.play(); }catch(e){}
+  scanSay('', scanMode === 'in' ? 'Show a QR card to check IN…' : 'Show a QR card to check OUT…');
+  scanLoop();
+}
+function stopCamera(){
+  clearTimeout(scanTimer); scanTimer = null;
+  if(scanStream){ scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  const v = $('scanVideo'); if(v) v.srcObject = null;
+}
+function scanLoop(){
+  const v = $('scanVideo'), cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently:true });
+  const tick = () => {
+    if(!scanStream) return;
+    if(!scanBusy && v.readyState >= 2 && v.videoWidth){
+      const k = Math.min(1, 640 / v.videoWidth);
+      cv.width = Math.round(v.videoWidth * k); cv.height = Math.round(v.videoHeight * k);
+      cx.drawImage(v, 0, 0, cv.width, cv.height);
+      const img = cx.getImageData(0, 0, cv.width, cv.height);
+      const hit = jsQR(img.data, img.width, img.height, { inversionAttempts:'dontInvert' });
+      if(hit && hit.data) handleScan(hit.data.trim());
+    }
+    scanTimer = setTimeout(tick, 120);
+  };
+  tick();
+}
+
+async function handleScan(data){
+  const now = Date.now();
+  if(data === lastScan.code && now - lastScan.at < 4000){ lastScan.at = now; return; }   // same card still in view
+  lastScan = { code:data, at:now };
+  scanBusy = true;
+  try{
+    const r = await markFromQr(data);
+    scanSay(r.kind, r.text); pushLog(r.kind, r.text); scanBeep(r.kind === 'ok');
+  }catch(e){
+    scanSay('err', e.message); pushLog('err', e.message); scanBeep(false);
+  }finally{ scanBusy = false; scanProgress(); }
+}
+
+/* ---------- the actual attendance marking ---------- */
+async function markFromQr(data){
+  if(!data.startsWith(QR_PREFIX)) throw new Error('Not an attendance QR card.');
+  const id = data.slice(QR_PREFIX.length);
+  const t = techs.find(x => String(x.id) === id);
+  if(!t) throw new Error('Unknown or inactive technician card.');
+  const day = ymd(new Date()), time = hhmm(new Date());
+
+  const card = currentDay === day ? document.querySelector(`.tc[data-id="${t.id}"]`) : null;
+  if(card && card.classList.contains('dirty')) throw new Error(t.name + ' has unsaved edits on screen — save or discard them first.');
+
+  // fresh read so a second device / earlier edit is never overwritten
+  const list = await gsRun('listSalaryEntries', t.id, day, day);
+  const e = (list || []).find(x => String(x.technician_id) === String(t.id)) || null;
+  const num = v => Number(v) || 0;
+  const short = v => v ? String(v).slice(0, 5) : '';
+
+  let att, timeIn, timeOut, salDue, trDue, etf, msg;
+  if(scanMode === 'in'){
+    if(e && e.time_in && (e.attendance === 'present' || e.attendance === 'half_day'))
+      return { kind:'dup', text:t.name + ' — already checked in at ' + short(e.time_in) };
+    const dS = Number($('defSal').value) || 0, dT = Number($('defTr').value) || 0, rate = Number($('defEtf').value) || 0;
+    att     = (e && e.attendance === 'half_day') ? 'half_day' : 'present';
+    timeIn  = time; timeOut = e ? (e.time_out || null) : null;
+    salDue  = e && num(e.salary_due) > 0 ? num(e.salary_due) : (att === 'half_day' ? +(dS / 2).toFixed(2) : dS);
+    trDue   = e && num(e.transport_due) > 0 ? num(e.transport_due) : dT;
+    const member = etfSet.has(t.id) || (e && num(e.etf_deduction) > 0);
+    etf     = e && num(e.etf_deduction) > 0 ? num(e.etf_deduction) : (member && rate ? +(salDue * rate / 100).toFixed(2) : 0);
+    msg     = '✔ ' + t.name + ' — checked IN at ' + time + (dS ? '' : '  (set Defaults to auto-fill salary)');
+  }else{
+    if(!e || !e.time_in) throw new Error(t.name + ' has no check-in today.');
+    if(e.time_out) return { kind:'dup', text:t.name + ' — already checked out at ' + short(e.time_out) };
+    att = e.attendance; timeIn = e.time_in; timeOut = time;
+    salDue = num(e.salary_due); trDue = num(e.transport_due); etf = num(e.etf_deduction);
+    msg = '✔ ' + t.name + ' — checked OUT at ' + time + ' (' + hoursTxt(hoursMin(short(e.time_in), time)) + ')';
+  }
+
+  const salPaid = e ? num(e.salary_paid) : 0, trPaid = e ? num(e.transport_paid) : 0;
+  const note = e ? (e.note || null) : null;
+  const asal = e ? num(e.arrears_salary_paid) : 0, atr = e ? num(e.arrears_transport_paid) : 0, aday = e ? (e.arrears_day || null) : null;
+  await gsRun('upsertSalaryEntry', t.id, day, att, salDue, trDue, salPaid, trPaid, note, admin.id, timeIn, timeOut, etf, asal, atr, aday);
+
+  // keep the on-screen list in sync
+  if(currentDay === day){
+    existing[t.id] = { technician_id:t.id, entry_date:day, attendance:att, salary_due:salDue, transport_due:trDue, salary_paid:salPaid, transport_paid:trPaid,
+                       note, time_in:timeIn, time_out:timeOut, etf_deduction:etf, arrears_salary_paid:asal, arrears_transport_paid:atr, arrears_day:aday };
+    if(document.querySelector(`.tc[data-id="${t.id}"]`)){
+      replaceCard(t.id); renderSummary(); renderTicker(); renderUnpaid(); updateDirty(); applyFilter();
+    }
+  }
+  return { kind:'ok', text:msg };
+}
+
+/* ---------- open / close ---------- */
+$('scanBtn').addEventListener('click', async () => {
+  if(typeof jsQR === 'undefined'){ toast('QR scanner library failed to load — check your internet connection.'); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    await modal({ title:'Camera not available', html:'This browser or page cannot use the camera. Open the page over <b>https</b> in Chrome, Edge or Safari.', ok:'OK', cancel:null }); return;
+  }
+  const today = ymd(new Date());
+  if(currentDay !== today){ await goToDay(today); if(currentDay !== today) return; }   // scanner always works on today
+  try{ scanAudio = scanAudio || new (window.AudioContext || window.webkitAudioContext)(); scanAudio.resume(); }catch(e){}
+  $('scanOv').classList.remove('hidden');
+  scanProgress(); startCamera();
+});
+function closeScanner(){ stopCamera(); $('scanOv').classList.add('hidden'); }
+$('scanClose').addEventListener('click', closeScanner);
+$('scanSwitch').addEventListener('click', () => { scanFacing = scanFacing === 'environment' ? 'user' : 'environment'; startCamera(); });
+$('scanMode').addEventListener('click', e => {
+  const b = e.target.closest('button[data-m]'); if(!b) return;
+  scanMode = b.dataset.m; lastScan = { code:'', at:0 };
+  $('scanMode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  scanSay('', scanMode === 'in' ? 'Show a QR card to check IN…' : 'Show a QR card to check OUT…');
+});
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && !$('scanOv').classList.contains('hidden')) closeScanner(); });
 </script>
 </body>
 </html>
