@@ -378,11 +378,15 @@ const ATT = { present:'Present', half_day:'Half day', absent:'Absent', leave:'Le
 const EPS = 0.005;
 
 function gsRun(fn, ...args){
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 20000);   // never hang forever
   return fetch(EDGE_FUNCTION_URL, {
     method:'POST',
     headers:{ 'Content-Type':'application/json', 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer ' + SUPABASE_ANON_KEY },
-    body: JSON.stringify({ fn, args })
-  }).then(r => r.json()).then(d => { if(!d.ok) throw new Error(d.error || 'Request failed.'); return d.result; });
+    body: JSON.stringify({ fn, args }),
+    signal: ctl.signal
+  }).catch(() => { const e = new Error('No connection to the server.'); e.net = true; throw e; })
+    .then(r => r.json()).then(d => { if(!d.ok) throw new Error(d.error || 'Request failed.'); return d.result; })
+    .finally(() => clearTimeout(timer));
 }
 const $ = id => document.getElementById(id);
 const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -803,7 +807,14 @@ $('cards').addEventListener('click', e => {
     updateCalc(card); markDirty(card); return;
   }
   const nb = e.target.closest('.now');
-  if(nb){ const d = new Date(), p = n => String(n).padStart(2, '0'); card.querySelector(`[data-f="${nb.dataset.now}"]`).value = p(d.getHours()) + ':' + p(d.getMinutes()); updateHrs(card); markDirty(card); return; }
+  if(nb){
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    if(card.dataset.att !== 'present' && card.dataset.att !== 'half_day') setAttendance(card, 'present');   // a time means they are here
+    card.querySelector(`[data-f="${nb.dataset.now}"]`).value = p(d.getHours()) + ':' + p(d.getMinutes());
+    updateHrs(card); markDirty(card);
+    saveCards([card], { quiet:true });          // instant auto-save
+    return;
+  }
   const ab = e.target.closest('.att button');
   if(ab){ setAttendance(card, ab.dataset.a); return; }
   if(e.target.closest('.save-one')) saveCards([card]);
@@ -899,13 +910,15 @@ function describe(e){
   return `${ATT[e.attendance]}, salary ${rs(e.salary_paid)} paid / ${rs(e.salary_due)} earned, transport ${rs(e.transport_paid)} paid / ${rs(e.transport_due)} earned` + (timesTxt(e) ? ', ' + timesTxt(e) : '') + (Number(e.etf_deduction) ? ', ETF ' + rs(e.etf_deduction) : '') + ((Number(e.arrears_salary_paid) || Number(e.arrears_transport_paid)) ? ', arrears settled ' + rs(Number(e.arrears_salary_paid) + Number(e.arrears_transport_paid)) : '');
 }
 const nameOf = id => techs.find(t => t.id === id).name;
-async function saveCards(cards){
+async function saveCards(cards, opts){
   if(!cards.length) return;
+  const quiet = !!(opts && opts.quiet);
   const rows = cards.map(readCard), results = rows.map(validateRow);
 
   // 1) blocking errors
   const bad = [];
   cards.forEach((c, i) => { showInline(c); if(results[i].errs.length) bad.push(i); });
+  if(bad.length && quiet){ toast('⚠ Not saved: ' + results[bad[0]].errs[0].msg); return; }
   if(bad.length){
     bad.forEach(i => cards[i].classList.remove('filtered'));
     cards[bad[0]].scrollIntoView({ behavior:'smooth', block:'center' });
@@ -921,7 +934,7 @@ async function saveCards(cards){
   const dupes = rows.filter(r => existing[r.id]);
   if(dupes.length) html += '<h3>Will replace earlier entry for ' + esc(currentDay) + '</h3><ul>' + dupes.map(r => `<li><b>${esc(nameOf(r.id))}</b> — currently: ${esc(describe(existing[r.id]))}</li>`).join('') + '</ul>';
   if(currentDay > ymd(new Date())) html += `<h3>Future date</h3><ul><li class="w">${esc(currentDay)} is in the future.</li></ul>`;
-  if(html){
+  if(html && !quiet){
     const ok = await modal({ title:'Review before saving (' + rows.length + ' ' + (rows.length === 1 ? 'entry' : 'entries') + ')', html, ok:'Save anyway' });
     if(!ok){ const first = warnIdx.length ? cards[warnIdx[0]] : cards[0]; first.classList.remove('filtered'); first.scrollIntoView({ behavior:'smooth', block:'center' }); return; }
   }
@@ -944,11 +957,12 @@ async function saveCards(cards){
   }
   btns.forEach(b => b.disabled = false);
   renderSummary(); renderTicker(); renderUnpaid(); updateDirty(); applyFilter();
-  if(saved) toast('✔ Saved ' + saved + ' ' + (saved === 1 ? 'entry' : 'entries'));
-  if(failed.length) await modal({ title:'Some entries could not be saved', ok:'OK', cancel:null, html:'<ul>' + failed.map(f => `<li class="e">${esc(f)}</li>`).join('') + '</ul><p>These cards are still open with your changes — fix the problem and save again.</p>' });
+  if(saved) toast(quiet ? '✔ Saved to database' : '✔ Saved ' + saved + ' ' + (saved === 1 ? 'entry' : 'entries'));
+  if(failed.length && quiet) toast('✖ Not saved: ' + failed[0]);
+  else if(failed.length) await modal({ title:'Some entries could not be saved', ok:'OK', cancel:null, html:'<ul>' + failed.map(f => `<li class="e">${esc(f)}</li>`).join('') + '</ul><p>These cards are still open with your changes — fix the problem and save again.</p>' });
 }
 $('saveAllBtn').addEventListener('click', () => saveCards(dirtyCards()));
-window.addEventListener('beforeunload', e => { if(dirtyCards().length){ e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => { if(dirtyCards().length || loadPending().length){ e.preventDefault(); e.returnValue = ''; } });
 
 /* =====================================================================
  * QR attendance cards + webcam scanner (floating dock)
@@ -1032,9 +1046,10 @@ $('qrClose').addEventListener('click', () => $('qrSheet').classList.add('hidden'
 /* ---------- scanner dock UI ---------- */
 function scanSay(kind, text){ const el = $('scanResult'); el.className = 'scanres ' + kind; el.textContent = text; }
 function scanProgress(){
-  if(currentDay !== ymd(new Date())){ $('scanCount').textContent = ''; return; }
+  const pend = loadPending().length, extra = pend ? ' · ⏳ ' + pend + ' waiting to sync' : '';
+  if(currentDay !== ymd(new Date())){ $('scanCount').textContent = extra; return; }
   const n = techs.filter(t => existing[t.id] && existing[t.id].time_in).length;
-  $('scanCount').textContent = '· in ' + n + '/' + techs.length;
+  $('scanCount').textContent = '· in ' + n + '/' + techs.length + extra;
 }
 function pushLog(kind, text){
   scanLog.unshift({ kind, text, t: hhmm(new Date()) }); scanLog.length = Math.min(scanLog.length, 10);
@@ -1098,14 +1113,52 @@ function stopCamera(){
   const v = $('scanVideo'); if(v) v.srcObject = null;
 }
 
+/* ---------- offline safety: a scan made while the connection is down is kept and saved automatically later ---------- */
+const PEND_KEY = 'qrPendingScans';
+function loadPending(){ try{ return JSON.parse(localStorage.getItem(PEND_KEY) || '[]'); }catch(e){ return []; } }
+function savePending(a){ try{ localStorage.setItem(PEND_KEY, JSON.stringify(a)); }catch(e){} }
+function queueScan(data, at){
+  const q = loadPending(), id = data.slice(QR_PREFIX.length);
+  const t = techs.find(x => String(x.id) === id), name = t ? t.name : 'Card';
+  if(!q.some(p => p.data === data && p.mode === at.mode && p.day === at.day)) q.push({ data, day:at.day, time:at.time, mode:at.mode });
+  savePending(q); scanProgress();
+  return { kind:'dup', text:'⏳ ' + name + ' — ' + at.mode.toUpperCase() + ' ' + at.time + ' kept, will auto-save when online', say:name + ', saved offline' };
+}
+let flushing = false;
+async function flushPending(){
+  if(flushing || scanBusy) return;
+  const q = loadPending(); if(!q.length) return;
+  flushing = true; scanBusy = true;
+  try{
+    while(q.length){
+      try{ const r = await markFromQr(q[0].data, q[0]); pushLog(r.kind, '(synced) ' + r.text); }
+      catch(e){ if(e.net) break; pushLog('err', 'Queued scan dropped: ' + e.message); }
+      q.shift(); savePending(q);
+    }
+  }finally{ flushing = false; scanBusy = false; scanProgress(); }
+}
+setInterval(flushPending, 10000);
+window.addEventListener('online', flushPending);
+
+/* a scan saved while the card on screen has other unsaved edits: keep the edits, just show the new in/out time */
+function syncScanIntoDirtyCard(card, att, tin, tout){
+  card.dataset.att = att;
+  card.querySelectorAll('.att button').forEach(b => b.classList.toggle('on', b.dataset.a === att));
+  const i = card.querySelector('[data-f="timeIn"]'), o = card.querySelector('[data-f="timeOut"]');
+  if(i && tin) i.value = String(tin).slice(0, 5);
+  if(o && tout) o.value = String(tout).slice(0, 5);
+  card.classList.add('has-times'); updateHrs(card);
+}
+
 async function handleScan(data){
   const now = Date.now();
   if(data === lastScan.code && now - lastScan.at < 4000){ lastScan.at = now; return; }   // same card still in view
   lastScan = { code:data, at:now };
   scanBusy = true;
+  const at = { day: ymd(new Date()), time: hhmm(new Date()), mode: effectiveMode() };    // time is taken at the moment of the scan
   let r;
-  try{ r = await markFromQr(data); }
-  catch(e){ r = { kind:'err', text:e.message, say:null }; }
+  try{ r = await markFromQr(data, at); }
+  catch(e){ r = e.net && data.startsWith(QR_PREFIX) ? queueScan(data, at) : { kind:'err', text:e.message, say:null }; }
   scanBusy = false;
   const muted = $('optSound').checked && scanAudio && scanAudio.state !== 'running' ? '  🔇 click the page to enable sound' : '';
   scanSay(r.kind, r.text + muted); pushLog(r.kind, r.text);
@@ -1116,15 +1169,16 @@ async function handleScan(data){
 }
 
 /* ---------- the actual attendance marking ---------- */
-async function markFromQr(data){
+async function markFromQr(data, opts){
+  opts = opts || {};
   if(!data.startsWith(QR_PREFIX)) throw new Error('Not an attendance QR card.');
   const id = data.slice(QR_PREFIX.length);
   const t = techs.find(x => String(x.id) === id);
   if(!t) throw new Error('Unknown or inactive technician card.');
-  const day = ymd(new Date()), time = hhmm(new Date());
+  const day = opts.day || ymd(new Date()), time = opts.time || hhmm(new Date()), mode = opts.mode || effectiveMode();
 
   const card = currentDay === day ? document.querySelector(`.tc[data-id="${t.id}"]`) : null;
-  if(card && card.classList.contains('dirty')) throw new Error(t.name + ' has unsaved edits on screen — save or discard them first.');
+  const wasDirty = !!(card && card.classList.contains('dirty'));   // scan is saved to the database anyway; the on-screen edits are kept
 
   // fresh read so a second device / earlier edit is never overwritten
   const list = await gsRun('listSalaryEntries', t.id, day, day);
@@ -1133,7 +1187,7 @@ async function markFromQr(data){
   const short = v => v ? String(v).slice(0, 5) : '';
 
   let att, timeIn, timeOut, salDue, trDue, etf, msg, say;
-  if(effectiveMode() === 'in'){
+  if(mode === 'in'){
     if(e && e.time_in && (e.attendance === 'present' || e.attendance === 'half_day'))
       return { kind:'dup', text:t.name + ' — already checked in at ' + short(e.time_in), say:t.name + ', already checked in' };
     const dS = Number($('defSal').value) || 0, dT = Number($('defTr').value) || 0, rate = Number($('defEtf').value) || 0;
@@ -1159,12 +1213,21 @@ async function markFromQr(data){
   const asal = e ? num(e.arrears_salary_paid) : 0, atr = e ? num(e.arrears_transport_paid) : 0, aday = e ? (e.arrears_day || null) : null;
   await gsRun('upsertSalaryEntry', t.id, day, att, salDue, trDue, salPaid, trPaid, note, admin.id, timeIn, timeOut, etf, asal, atr, aday);
 
+  // confirm the row really is in the database before telling the operator it worked
+  const chk = await gsRun('listSalaryEntries', t.id, day, day);
+  const row = (chk || []).find(x => String(x.technician_id) === String(t.id));
+  if(!row || short(row.time_in) !== short(timeIn) || short(row.time_out) !== short(timeOut))
+    throw new Error('Could not confirm the save for ' + t.name + ' — please scan again.');
+  msg += ' · saved';
+
   // keep the on-screen list in sync
   if(currentDay === day){
     existing[t.id] = { technician_id:t.id, entry_date:day, attendance:att, salary_due:salDue, transport_due:trDue, salary_paid:salPaid, transport_paid:trPaid,
                        note, time_in:timeIn, time_out:timeOut, etf_deduction:etf, arrears_salary_paid:asal, arrears_transport_paid:atr, arrears_day:aday };
-    if(document.querySelector(`.tc[data-id="${t.id}"]`)){
-      replaceCard(t.id); renderSummary(); renderTicker(); renderUnpaid(); updateDirty(); applyFilter();
+    const cc = document.querySelector(`.tc[data-id="${t.id}"]`);
+    if(cc){
+      if(wasDirty) syncScanIntoDirtyCard(cc, att, timeIn, timeOut); else replaceCard(t.id);
+      renderSummary(); renderTicker(); renderUnpaid(); updateDirty(); applyFilter();
     }
   }
   return { kind:'ok', text:msg, say };
