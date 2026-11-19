@@ -243,6 +243,9 @@
   #scanDock .dk-opts input{width:auto;padding:0;}
   #scanDock .dk-sw{width:100%;padding:6px;font-size:.75rem;}
   #scanDock #scanLog{max-height:110px;overflow:auto;}
+  #scanDock.inpip{position:static;left:auto;bottom:auto;width:auto;max-width:none;min-height:100vh;border:0;border-radius:0;box-shadow:none;}
+  #scanDock.inpip .vwrap{aspect-ratio:4/3;}
+  #scanDock #dkPip.on{background:var(--primary);color:#fff;border-color:var(--primary);}
   #scanDock.live .dk-head b::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--danger);margin-right:6px;animation:pulse 1.4s infinite;}
   @keyframes pulse{50%{opacity:.25}}
 </style>
@@ -337,7 +340,7 @@
 <!-- ===== QR scanner dock (floating, keeps running while you work) ===== -->
 <div id="scanDock" class="hidden" role="region" aria-label="QR attendance scanner">
   <div class="dk-head"><b>📷 QR attendance</b><span id="scanCount"></span>
-    <span class="dk-actions"><button type="button" id="dkMin" title="Shrink / expand">▁</button><button type="button" id="scanClose" title="Stop scanner">✕</button></span></div>
+    <span class="dk-actions"><button type="button" id="dkPip" title="Float on top of other tabs and apps (Picture-in-Picture)">⧉</button><button type="button" id="dkMin" title="Shrink / expand">▁</button><button type="button" id="scanClose" title="Stop scanner">✕</button></span></div>
   <div class="dk-body">
     <div class="scanmode" id="scanMode">
       <button type="button" data-m="auto" class="on" title="Before the cut-off time scans check IN, after it scans check OUT">⏱ Auto</button>
@@ -352,6 +355,7 @@
       <label><input type="checkbox" id="optSound" checked /> 🔊 Sound</label>
       <label><input type="checkbox" id="optVoice" /> 🗣 Say name</label>
       <label><input type="checkbox" id="optAuto" /> ▶ Auto-start</label>
+      <label title="When you switch to another tab or app, the scanner pops out and floats on top"><input type="checkbox" id="optPip" /> 🪟 Auto-float when I leave this tab</label>
     </div>
     <div class="dk-cut"><label for="optCut">Auto: check OUT from</label><input type="time" id="optCut" value="16:00" /></div>
     <button type="button" class="btn btn-ghost dk-sw" id="scanSwitch">Switch camera</button>
@@ -393,7 +397,8 @@ function gsRun(fn, ...args){
     .then(r => r.json()).then(d => { if(!d.ok) throw new Error(d.error || 'Request failed.'); return d.result; })
     .finally(() => clearTimeout(timer));
 }
-const $ = id => document.getElementById(id);
+var pipWin = null;   // Picture-in-Picture window (when the scanner is floating)
+const $ = id => document.getElementById(id) || (pipWin && !pipWin.closed ? pipWin.document.getElementById(id) : null);
 const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rs = n => 'Rs. ' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 });
 const ymd = d => { const p = n => String(n).padStart(2,'0'); return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()); };
@@ -985,13 +990,13 @@ const hhmm = d => String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinut
 
 /* ---------- saved options ---------- */
 const OPT_KEY = 'qrScanOpts';
-function loadOpts(){ try{ return Object.assign({ sound:true, voice:false, auto:false, compact:false, mode:'auto', cut:'16:00' }, JSON.parse(localStorage.getItem(OPT_KEY) || '{}')); }catch(e){ return { sound:true, voice:false, auto:false, compact:false, mode:'auto', cut:'16:00' }; } }
-function saveOpts(){ try{ localStorage.setItem(OPT_KEY, JSON.stringify({ sound:$('optSound').checked, voice:$('optVoice').checked, auto:$('optAuto').checked, compact:$('scanDock').classList.contains('compact'), mode:scanMode, cut:$('optCut').value || '16:00' })); }catch(e){} }
-(function initOpts(){ const o = loadOpts(); $('optSound').checked = o.sound; $('optVoice').checked = o.voice; $('optAuto').checked = o.auto; $('scanDock').classList.toggle('compact', o.compact);
+function loadOpts(){ try{ return Object.assign({ sound:true, voice:false, auto:false, pip:false, compact:false, mode:'auto', cut:'16:00' }, JSON.parse(localStorage.getItem(OPT_KEY) || '{}')); }catch(e){ return { sound:true, voice:false, auto:false, pip:false, compact:false, mode:'auto', cut:'16:00' }; } }
+function saveOpts(){ try{ localStorage.setItem(OPT_KEY, JSON.stringify({ sound:$('optSound').checked, voice:$('optVoice').checked, auto:$('optAuto').checked, pip:$('optPip').checked, compact:$('scanDock').classList.contains('compact'), mode:scanMode, cut:$('optCut').value || '16:00' })); }catch(e){} }
+(function initOpts(){ const o = loadOpts(); $('optSound').checked = o.sound; $('optVoice').checked = o.voice; $('optAuto').checked = o.auto; $('optPip').checked = o.pip; $('scanDock').classList.toggle('compact', o.compact);
   scanMode = ['auto','in','out'].includes(o.mode) ? o.mode : 'auto'; $('optCut').value = o.cut || '16:00';
   $('scanMode').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === scanMode)); })();
 $('optCut').addEventListener('change', () => { if(!$('optCut').value) $('optCut').value = '16:00'; saveOpts(); lastScan = { code:'', at:0 }; scanSay('', readyText()); });
-['optSound','optVoice','optAuto'].forEach(id => $(id).addEventListener('change', () => { saveOpts(); if(id === 'optSound' && $('optSound').checked){ ensureAudio(); playTone('ok'); } }));
+['optSound','optVoice','optAuto','optPip'].forEach(id => $(id).addEventListener('change', () => { saveOpts(); if(id === 'optSound' && $('optSound').checked){ ensureAudio(); playTone('ok'); } }));
 $('dkMin').addEventListener('click', () => { $('scanDock').classList.toggle('compact'); saveOpts(); });
 
 /* ---------- sound (browsers only allow audio after one click/key on the page) ---------- */
@@ -1208,6 +1213,62 @@ function stopCamera(){
   const v = $('scanVideo'); if(v) v.srcObject = null;
 }
 
+/* ---------- floating scanner (Picture-in-Picture, like a YouTube video) ----------
+   Chrome / Edge desktop: the WHOLE scanner (camera + result + mode buttons) floats in an always-on-top
+   window, so you can scan while working in any other tab or app.
+   Other browsers: falls back to the camera-only video Picture-in-Picture (you still hear the beep / voice).
+   Scanning keeps running either way - it is driven by a Web Worker, not by the visible page. */
+const PIP_CSS = 'html,body{margin:0 !important;padding:0 !important;min-height:100%;} body{background:var(--card) !important;}';
+function pipActive(){ return !!(pipWin && !pipWin.closed) || !!document.pictureInPictureElement; }
+function pipButton(){ const b = $('dkPip'); if(b) b.classList.toggle('on', pipActive()); }
+async function openPip(auto){
+  if(!scanWanted){ if(!auto) toast('Start the scanner first, then float it.'); return; }
+  const dock = $('scanDock'), v = $('scanVideo');
+  // already floating -> toggle off (manual) / ignore (auto)
+  if(pipWin && !pipWin.closed){ if(!auto) pipWin.close(); return; }
+  if(document.pictureInPictureElement){ if(!auto){ try{ await document.exitPictureInPicture(); }catch(e){} } return; }
+
+  if('documentPictureInPicture' in window){
+    try{
+      const w = await documentPictureInPicture.requestWindow({ width:330, height:540 });
+      pipWin = w;
+      const st = w.document.createElement('style');
+      st.textContent = Array.from(document.querySelectorAll('style')).map(x => x.textContent).join('\n') + '\n' + PIP_CSS;
+      w.document.head.appendChild(st);
+      w.document.title = 'QR attendance';
+      dock.classList.add('inpip'); dock.classList.remove('compact');
+      w.document.body.appendChild(dock);
+      try{ v.play(); }catch(e){}
+      w.addEventListener('pagehide', () => {            // window closed -> put the scanner back on the page
+        pipWin = null; dock.classList.remove('inpip');
+        document.body.appendChild(dock);
+        try{ v.play(); }catch(e){}
+        pipButton();
+      });
+      pipButton();
+      return;
+    }catch(e){ pipWin = null; /* fall through to video PiP */ }
+  }
+  if(document.pictureInPictureEnabled && v.requestPictureInPicture){
+    try{
+      if(v.paused) await v.play();
+      await v.requestPictureInPicture();
+      v.addEventListener('leavepictureinpicture', pipButton, { once:true });
+      pipButton();
+      if(!auto) toast('Camera is floating. Scans still work in any tab - you will hear the beep.');
+      return;
+    }catch(e){ if(!auto) toast('Floating window could not start: ' + (e.message || e.name)); return; }
+  }
+  if(!auto) toast('This browser does not support a floating window. Use Chrome or Edge.');
+}
+function closePip(){
+  try{ if(pipWin && !pipWin.closed) pipWin.close(); }catch(e){}
+  try{ if(document.pictureInPictureElement) document.exitPictureInPicture(); }catch(e){}
+}
+$('dkPip').addEventListener('click', () => openPip(false));
+// Chrome 134+: offers the floating window automatically when you switch tab while the camera is in use
+try{ navigator.mediaSession.setActionHandler('enterpictureinpicture', () => { if(scanWanted && $('optPip').checked) openPip(true); }); }catch(e){}
+
 /* ---------- offline safety: a scan made while the connection is down is kept and saved automatically later ---------- */
 const PEND_KEY = 'qrPendingScans';
 function loadPending(){ try{ return JSON.parse(localStorage.getItem(PEND_KEY) || '[]'); }catch(e){ return []; } }
@@ -1339,7 +1400,7 @@ async function openDock(){
   scanProgress(); startCamera();
 }
 function closeDock(){
-  scanWanted = false; stopCamera(); $('scanDock').classList.remove('live'); $('scanDock').classList.add('hidden');
+  scanWanted = false; closePip(); stopCamera(); $('scanDock').classList.remove('live'); $('scanDock').classList.add('hidden');
   try{ if(wakeLock){ wakeLock.release(); wakeLock = null; } }catch(e){}
   document.title = ORIG_TITLE;
 }
