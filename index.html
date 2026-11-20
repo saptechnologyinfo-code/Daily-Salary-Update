@@ -243,6 +243,9 @@
   #scanDock .dk-opts input{width:auto;padding:0;}
   #scanDock .dk-sw{width:100%;padding:6px;font-size:.75rem;}
   #scanDock #scanLog{max-height:110px;overflow:auto;}
+  #scanDock .dk-face{width:100%;margin-top:6px;padding:7px;font-size:.8rem;}
+  .fe-list{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0;} .fe-list span{font-size:.72rem;border:1px solid var(--border);background:var(--input);border-radius:20px;padding:2px 8px;color:var(--muted);} .fe-list span.on{border-color:var(--success);color:var(--success);}
+  .fe-msg{font-size:.82rem;font-weight:700;min-height:1.3em;margin:8px 0 2px;color:var(--muted);} .fe-msg.err{color:var(--danger);} .fe-msg.ok{color:var(--success);}
   #scanDock.inpip{position:static;left:auto;bottom:auto;width:auto;max-width:none;min-height:100vh;border:0;border-radius:0;box-shadow:none;}
   #scanDock.inpip .vwrap{aspect-ratio:4/3;}
   #scanDock #dkPip.on{background:var(--primary);color:#fff;border-color:var(--primary);}
@@ -288,6 +291,7 @@
       <div class="qrbtns">
         <button class="btn" id="scanBtn" title="Open the webcam and mark attendance by scanning QR cards">📷 Scan QR attendance</button>
         <button class="btn btn-ghost" id="qrCardsBtn" title="Create printable QR attendance cards">🪪 QR cards</button>
+        <button class="btn btn-ghost" id="faceEnrollBtn" title="Optional: register faces so people can check in by face">🙂 Face enroll</button>
       </div>
     </div>
 
@@ -348,6 +352,7 @@
       <button type="button" data-m="out">🌙 OUT</button>
     </div>
     <div class="vwrap"><video id="scanVideo" muted playsinline></video><div class="frame"></div></div>
+    <button type="button" class="btn btn-ghost dk-face" id="scanFace" title="Optional: identify the person in front of the camera by face (QR keeps working as normal)">🙂 Scan face</button>
   </div>
   <div class="scanres" id="scanResult">Starting camera…</div>
   <div class="dk-more">
@@ -1268,6 +1273,135 @@ function closePip(){
 $('dkPip').addEventListener('click', () => openPip(false));
 // Chrome 134+: offers the floating window automatically when you switch tab while the camera is in use
 try{ navigator.mediaSession.setActionHandler('enterpictureinpicture', () => { if(scanWanted && $('optPip').checked) openPip(true); }); }catch(e){}
+
+/* ---------- optional face recognition (QR stays the default) ----------
+   Click "🙂 Scan face" in the scanner: it looks at the camera for up to 10 seconds, and if the face matches
+   an enrolled person it marks attendance through exactly the same path as a QR scan (markFromQr).
+   Only 128-number fingerprints are stored (never photos). The library + models download on first use only,
+   so people who never use face scanning pay nothing. */
+const FACE_VER = '1.7.12';
+const FACE_LIB = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@' + FACE_VER + '/dist/face-api.js';
+const FACE_MODELS = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@' + FACE_VER + '/model/';
+const FACE_MAX_DIST = 0.5;     // lower = stricter (0.6 is the library default; 0.5 avoids look-alike mistakes)
+const FACE_MIN_GAP  = 0.04;    // best match must beat the runner-up by this much
+let facePromise = null, faceScanning = false;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function loadFaceLib(){
+  if(facePromise) return facePromise;
+  facePromise = (async () => {
+    if(typeof faceapi === 'undefined'){
+      await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = FACE_LIB; sc.onload = res;
+        sc.onerror = () => rej(new Error('Could not download the face library - check the internet connection.')); document.head.appendChild(sc); });
+    }
+    await Promise.all([ faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODELS), faceapi.nets.faceLandmark68Net.loadFromUri(FACE_MODELS), faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODELS) ]);
+  })().catch(e => { facePromise = null; throw e; });
+  return facePromise;
+}
+async function loadFaceDB(){
+  const rows = (await gsRun('listFaceData')) || [], db = new Map();
+  rows.forEach(r => { const ds = (r.descriptors || []).map(a => Float32Array.from(a)); if(ds.length) db.set(String(r.id), ds); });
+  return db;
+}
+function matchFace(desc, db, skipId){
+  let best = null, second = Infinity;
+  db.forEach((ds, id) => {
+    if(id === skipId) return;
+    let m = Infinity; ds.forEach(d => { const x = faceapi.euclideanDistance(desc, d); if(x < m) m = x; });
+    if(!best || m < best.dist){ if(best) second = best.dist; best = { id, dist:m }; } else if(m < second) second = m;
+  });
+  return best ? { id:best.id, dist:best.dist, gap:second - best.dist } : null;
+}
+const faceOpts = () => new faceapi.TinyFaceDetectorOptions({ inputSize:320, scoreThreshold:0.5 });
+function frameCanvas(v){
+  const k = Math.min(1, 640 / v.videoWidth), c = document.createElement('canvas');
+  c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k); c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); return c;
+}
+
+async function scanFace(){
+  if(faceScanning) return;
+  if(!scanWanted || !scanStream){ toast('Start the scanner first.'); return; }
+  const btn = $('scanFace'); faceScanning = true; btn.disabled = true;
+  try{
+    scanSay('', '🙂 Loading face recognition…');
+    await loadFaceLib();
+    const db = await loadFaceDB();
+    if(!db.size){ scanSay('err', 'No faces enrolled yet - use 🙂 Face enroll on the main page.'); return; }
+    const v = $('scanVideo'), t0 = Date.now(); let who = null, streak = 0;
+    scanSay('', '🙂 Look straight at the camera…');
+    while(Date.now() - t0 < 10000 && scanWanted && scanStream){
+      if(v.readyState >= 2 && v.videoWidth){
+        const r = await faceapi.detectSingleFace(frameCanvas(v), faceOpts()).withFaceLandmarks().withFaceDescriptor();
+        const m = r ? matchFace(r.descriptor, db) : null;
+        const good = m && m.dist <= FACE_MAX_DIST && (db.size < 2 || m.gap >= FACE_MIN_GAP) ? m.id : null;
+        if(good && good === who) streak++; else { who = good; streak = good ? 1 : 0; }
+        if(streak >= 2){ await handleScan(QR_PREFIX + who); return; }      // same person on 2 frames in a row
+      }
+      await sleep(120);
+    }
+    if(scanWanted){ scanSay('err', '🙂 Face not recognised - try again, or show the QR card.'); playTone('err'); pushLog('err', 'Face not recognised'); }
+  }catch(e){ scanSay('err', '🙂 ' + (e.message || 'Face scan failed.')); }
+  finally{ faceScanning = false; btn.disabled = false; setTimeout(() => { if(scanWanted && !faceScanning && $('scanResult').className === 'scanres err') scanSay('', readyText()); }, 5000); }
+}
+$('scanFace').addEventListener('click', scanFace);
+
+/* ---------- face enrolment (admin) ---------- */
+async function openFaceEnroll(){
+  if(!techs.length){ toast('No technicians loaded.'); return; }
+  const resume = scanWanted; if(resume) stopCamera();      // free the camera for the enrolment window
+  let stream = null, db = new Map(), shots = [];
+  const ov = document.createElement('div'); ov.className = 'overlay';
+  ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true"><h2>🙂 Face enrolment</h2><div class="body">
+    <label for="feWho">Person</label><select id="feWho"></select>
+    <div class="vwrap" style="margin-top:8px;"><video id="feVid" muted playsinline></video></div>
+    <div class="fe-msg" id="feMsg">Loading camera and face models…</div>
+    <div class="fe-list" id="feShots"></div>
+    <div class="defhint">Take 3-5 photos: straight, slightly left, slightly right, with and without glasses/cap. Only numbers are saved, not the photos. Get the person's consent first.</div>
+  </div><div class="foot"><button class="btn btn-ghost" id="feDel">Remove face</button><button class="btn btn-ghost" id="feClose">Close</button>
+    <button class="btn" id="feShot" disabled>📸 Capture</button><button class="btn" id="feSave" disabled>Save</button></div></div>`;
+  document.body.appendChild(ov);
+  const q = id => ov.querySelector('#' + id), msg = (t, k) => { const m = q('feMsg'); m.textContent = t; m.className = 'fe-msg ' + (k || ''); };
+  const who = () => q('feWho').value;
+  const nameOf = id => (techs.find(t => String(t.id) === String(id)) || {}).name || 'another person';
+  const drawSel = () => { const cur = who(); q('feWho').innerHTML = techs.map(t => `<option value="${esc(String(t.id))}">${esc(t.name)}${db.has(String(t.id)) ? '  ✔ enrolled' : ''}</option>`).join(''); if(cur) q('feWho').value = cur; };
+  const drawShots = () => { q('feShots').innerHTML = [0,1,2,3,4].map(i => `<span class="${i < shots.length ? 'on' : ''}">${i < shots.length ? '✔' : '○'} ${i + 1}</span>`).join(''); q('feSave').disabled = shots.length < 3; q('feShot').disabled = !stream || shots.length >= 5; };
+  const close = () => { if(stream) stream.getTracks().forEach(t => t.stop()); ov.remove(); if(resume && scanWanted) startCamera(); };
+  q('feClose').addEventListener('click', close);
+  q('feWho').addEventListener('change', () => { shots = []; drawShots(); msg(db.has(who()) ? 'Already enrolled - capturing again replaces the old data.' : 'Ready - capture 3-5 photos.'); });
+  drawSel(); drawShots();
+  try{
+    await loadFaceLib(); db = await loadFaceDB(); drawSel();
+    stream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{ facingMode:{ ideal:'user' }, width:{ ideal:1280 }, height:{ ideal:720 } } });
+    const v = q('feVid'); v.srcObject = stream; await v.play();
+    msg('Ready - ask the person to look at the camera, then press Capture.'); drawShots();
+  }catch(e){ msg(e && e.name === 'NotAllowedError' ? 'Camera blocked - allow it in the browser address bar.' : (e.message || 'Could not start.'), 'err'); }
+
+  q('feShot').addEventListener('click', async () => {
+    const v = q('feVid'); if(!stream || !v.videoWidth) return;
+    q('feShot').disabled = true; msg('Checking…');
+    try{
+      const rs = await faceapi.detectAllFaces(frameCanvas(v), faceOpts()).withFaceLandmarks().withFaceDescriptors();
+      if(rs.length !== 1){ msg(rs.length ? 'More than one face in view - only one person please.' : 'No face found - move closer / face the light.', 'err'); return; }
+      const dup = matchFace(rs[0].descriptor, db, who());
+      if(dup && dup.dist < 0.45){ msg('This face looks like ' + nameOf(dup.id) + ' (already enrolled). Check you picked the right person.', 'err'); return; }
+      shots.push(rs[0].descriptor); msg(shots.length < 3 ? 'Good. Turn the head a little and capture again.' : 'Good. You can save now, or capture up to 5.', 'ok');
+    }catch(e){ msg(e.message || 'Capture failed.', 'err'); }
+    finally{ drawShots(); }
+  });
+  q('feSave').addEventListener('click', async () => {
+    q('feSave').disabled = true; msg('Saving…');
+    try{
+      await gsRun('setTechnicianFace', who(), shots.map(d => Array.from(d).map(x => +x.toFixed(4))));
+      db.set(String(who()), shots.slice()); shots = []; drawSel(); drawShots(); msg('✔ Saved. Face scan now works for ' + nameOf(who()) + '.', 'ok');
+    }catch(e){ msg(e.message, 'err'); drawShots(); }
+  });
+  q('feDel').addEventListener('click', async () => {
+    if(!db.has(who())){ msg('No face data saved for this person.', 'err'); return; }
+    if(!(await modal({ title:'Remove face data', html:'Delete the saved face data for <b>' + esc(nameOf(who())) + '</b>? QR cards keep working.', ok:'Remove', danger:true }))) return;
+    try{ await gsRun('setTechnicianFace', who(), null); db.delete(String(who())); drawSel(); msg('Removed.', 'ok'); }catch(e){ msg(e.message, 'err'); }
+  });
+}
+$('faceEnrollBtn').addEventListener('click', openFaceEnroll);
 
 /* ---------- offline safety: a scan made while the connection is down is kept and saved automatically later ---------- */
 const PEND_KEY = 'qrPendingScans';
