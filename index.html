@@ -250,6 +250,17 @@
   #scanDock.inpip .vwrap{aspect-ratio:4/3;}
   #scanDock #dkPip.on{background:var(--primary);color:#fff;border-color:var(--primary);}
   #scanDock.live .dk-head b::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--danger);margin-right:6px;animation:pulse 1.4s infinite;}
+  /* ===== main dashboard: face scan + scan log ===== */
+  .scanlog{margin:10px 0;padding:10px 12px;}
+  .scanlog .sl-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
+  .scanlog .sl-head b{font-size:.92rem;}
+  .scanlog .sl-head .sl-count{font-size:.75rem;font-weight:700;color:var(--muted);}
+  .scanlog .sl-head .btn{margin-left:auto;padding:5px 12px;font-size:.78rem;}
+  .scanlog #mainScanRes{margin:0 0 6px;padding:10px;font-size:.92rem;}
+  #mainScanLog{list-style:none;margin:0;padding:0;max-height:230px;overflow:auto;font-size:.84rem;}
+  #mainScanLog li{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);}
+  #mainScanLog li.empty{justify-content:center;color:var(--muted);}
+  #mainScanLog .t{color:var(--muted);white-space:nowrap;}
   @keyframes pulse{50%{opacity:.25}}
 </style>
 <!-- QR libraries embedded (jsQR, Apache-2.0; qrcode-generator, MIT) so no internet/CDN is needed -->
@@ -290,9 +301,16 @@
       <div><label class="tgl" title="Show optional in/out time boxes on every card"><input type="checkbox" id="trackTimes" /> ⏱ Track in/out time</label></div>
       <div class="qrbtns">
         <button class="btn" id="scanBtn" title="Open the webcam and mark attendance by scanning QR cards">📷 Scan QR attendance</button>
+        <button class="btn" id="mainFaceBtn" title="Identify the person in front of the camera by face (works even while the scanner is floating in the other display)">🙂 Scan face</button>
         <button class="btn btn-ghost" id="qrCardsBtn" title="Create printable QR attendance cards">🪪 QR cards</button>
         <button class="btn btn-ghost" id="faceEnrollBtn" title="Optional: register faces so people can check in by face">🙂 Face enroll</button>
       </div>
+    </div>
+
+    <div class="card scanlog" id="scanLogCard" aria-label="Scan log">
+      <div class="sl-head"><b>📋 Scan log</b><span class="sl-count" id="mainScanCount"></span><button type="button" class="btn btn-ghost" id="mainLogClear" title="Clear this list (attendance already saved is not affected)">Clear</button></div>
+      <div class="scanres" id="mainScanRes">Scanner is off — press 📷 Scan QR attendance or 🙂 Scan face.</div>
+      <ul id="mainScanLog"><li class="empty">No scans yet.</li></ul>
     </div>
 
     <details class="defaults" id="defaultsBox">
@@ -492,6 +510,7 @@ async function start(){
   }catch(e){ setCards('<div class="empty">Could not load technicians: ' + esc(e.message) + '<br><button class="btn" onclick="location.reload()" style="margin-top:10px;">Retry</button></div>'); return; }
   $('dayInput').value = currentDay;
   loadDay();
+  if(typeof scanProgress === 'function') scanProgress();
   if(typeof autoStartScan === 'function') autoStartScan();
 }
 if(admin) start();
@@ -1149,16 +1168,28 @@ $('qrPrint').addEventListener('click', async () => { await qrReady; window.print
 $('qrClose').addEventListener('click', () => $('qrSheet').classList.add('hidden'));
 
 /* ---------- scanner dock UI ---------- */
-function scanSay(kind, text){ const el = $('scanResult'); el.className = 'scanres ' + kind; el.textContent = text; }
+function scanSay(kind, text){
+  const el = $('scanResult'); if(el){ el.className = 'scanres ' + kind; el.textContent = text; }
+  const m = document.getElementById('mainScanRes'); if(m){ m.className = 'scanres ' + kind; m.textContent = text; }   // main dashboard mirror
+}
 function scanProgress(){
   const pend = loadPending().length, extra = pend ? ' · ⏳ ' + pend + ' waiting to sync' : '';
-  if(currentDay !== ymd(new Date())){ $('scanCount').textContent = extra; return; }
-  const n = techs.filter(t => existing[t.id] && existing[t.id].time_in).length;
-  $('scanCount').textContent = '· in ' + n + '/' + techs.length + extra;
+  let txt = extra;
+  if(currentDay === ymd(new Date())){ const n = techs.filter(t => existing[t.id] && existing[t.id].time_in).length; txt = '· in ' + n + '/' + techs.length + extra; }
+  const a = $('scanCount'); if(a) a.textContent = txt;
+  const b = document.getElementById('mainScanCount'); if(b) b.textContent = txt;
 }
-function pushLog(kind, text){
-  scanLog.unshift({ kind, text, t: hhmm(new Date()) }); scanLog.length = Math.min(scanLog.length, 10);
-  $('scanLog').innerHTML = scanLog.map(l => `<li><span style="color:var(--${l.kind === 'ok' ? 'success' : l.kind === 'dup' ? 'warn' : 'danger'})">${esc(l.text)}</span><span class="t">${l.t}</span></li>`).join('');
+function logRows(n){
+  return scanLog.slice(0, n).map(l => `<li><span style="color:var(--${l.kind === 'ok' ? 'success' : l.kind === 'dup' ? 'warn' : 'danger'})">${l.src === 'face' ? '🙂 ' : ''}${esc(l.text)}</span><span class="t">${l.t}</span></li>`).join('');
+}
+function renderLogs(){
+  const d = $('scanLog'); if(d) d.innerHTML = logRows(10);                                   // floating / docked scanner
+  const m = document.getElementById('mainScanLog');                                          // main dashboard
+  if(m) m.innerHTML = scanLog.length ? logRows(40) : '<li class="empty">No scans yet.</li>';
+}
+function pushLog(kind, text, src){
+  scanLog.unshift({ kind, text, src: src || '', t: hhmm(new Date()) }); scanLog.length = Math.min(scanLog.length, 40);
+  renderLogs();
 }
 /* Auto mode: scans before the cut-off time (default 16:00) check IN, scans from the cut-off onward check OUT. */
 function effectiveMode(){ return scanMode !== 'auto' ? scanMode : (hhmm(new Date()) >= ($('optCut').value || '16:00') ? 'out' : 'in'); }
@@ -1318,10 +1349,11 @@ function frameCanvas(v){
   c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k); c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); return c;
 }
 
+function faceBusy(on){ ['scanFace', 'mainFaceBtn'].forEach(id => { const b = $(id); if(b) b.disabled = on; }); }
 async function scanFace(){
   if(faceScanning) return;
   if(!scanWanted || !scanStream){ toast('Start the scanner first.'); return; }
-  const btn = $('scanFace'); faceScanning = true; btn.disabled = true;
+  faceScanning = true; faceBusy(true);
   try{
     scanSay('', '🙂 Loading face recognition…');
     await loadFaceLib();
@@ -1335,15 +1367,24 @@ async function scanFace(){
         const m = r ? matchFace(r.descriptor, db) : null;
         const good = m && m.dist <= FACE_MAX_DIST && (db.size < 2 || m.gap >= FACE_MIN_GAP) ? m.id : null;
         if(good && good === who) streak++; else { who = good; streak = good ? 1 : 0; }
-        if(streak >= 2){ await handleScan(QR_PREFIX + who); return; }      // same person on 2 frames in a row
+        if(streak >= 2){ await handleScan(QR_PREFIX + who, 'face'); return; }      // same person on 2 frames in a row
       }
       await sleep(120);
     }
-    if(scanWanted){ scanSay('err', '🙂 Face not recognised - try again, or show the QR card.'); playTone('err'); pushLog('err', 'Face not recognised'); }
+    if(scanWanted){ scanSay('err', '🙂 Face not recognised - try again, or show the QR card.'); playTone('err'); pushLog('err', 'Face not recognised', 'face'); }
   }catch(e){ scanSay('err', '🙂 ' + (e.message || 'Face scan failed.')); }
-  finally{ faceScanning = false; btn.disabled = false; setTimeout(() => { if(scanWanted && !faceScanning && $('scanResult').className === 'scanres err') scanSay('', readyText()); }, 5000); }
+  finally{ faceScanning = false; faceBusy(false); setTimeout(() => { if(scanWanted && !faceScanning && $('scanResult').className === 'scanres err') scanSay('', readyText()); }, 5000); }
 }
 $('scanFace').addEventListener('click', scanFace);
+/* main-dashboard face button: starts the camera first if the scanner is not running, then scans the face.
+   Works while the scanner dock is floating in the Picture-in-Picture window (the other display). */
+$('mainFaceBtn').addEventListener('click', async () => {
+  if(faceScanning) return;
+  if(!scanWanted){ await openDock(); const t0 = Date.now(); while(scanWanted && !scanStream && Date.now() - t0 < 8000) await sleep(150); }
+  if(scanWanted && scanStream) scanFace();
+});
+$('mainLogClear').addEventListener('click', () => { scanLog.length = 0; renderLogs(); });
+renderLogs();
 
 /* ---------- face enrolment (admin) ---------- */
 async function openFaceEnroll(){
@@ -1440,7 +1481,7 @@ function syncScanIntoDirtyCard(card, att, tin, tout){
   card.classList.add('has-times'); updateHrs(card);
 }
 
-async function handleScan(data){
+async function handleScan(data, src){
   const now = Date.now();
   if(data === lastScan.code && now - lastScan.at < 4000){ lastScan.at = now; return; }   // same card still in view
   lastScan = { code:data, at:now };
@@ -1451,7 +1492,7 @@ async function handleScan(data){
   catch(e){ r = e.net && data.startsWith(QR_PREFIX) ? queueScan(data, at) : { kind:'err', text:e.message, say:null }; }
   scanBusy = false;
   const muted = $('optSound').checked && scanAudio && scanAudio.state !== 'running' ? '  🔇 click the page to enable sound' : '';
-  scanSay(r.kind, r.text + muted); pushLog(r.kind, r.text);
+  scanSay(r.kind, r.text + muted); pushLog(r.kind, r.text, src);
   playTone(r.kind); speak(r.say);
   if(r.kind === 'ok') flashTitle('✔ ' + r.text.replace(/^✔\s*/, ''));
   scanProgress();
@@ -1537,6 +1578,7 @@ function closeDock(){
   scanWanted = false; closePip(); stopCamera(); $('scanDock').classList.remove('live'); $('scanDock').classList.add('hidden');
   try{ if(wakeLock){ wakeLock.release(); wakeLock = null; } }catch(e){}
   document.title = ORIG_TITLE;
+  scanSay('', 'Scanner is off — press 📷 Scan QR attendance or 🙂 Scan face.');
 }
 function autoStartScan(){ if(loadOpts().auto) openDock(); }
 
